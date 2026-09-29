@@ -1,0 +1,77 @@
+{
+    "name": "dex/curio",
+    "description": "A curious way to query Eloquent",
+    "keywords": [
+        "dex",
+        "laravel",
+        "curio"
+    ],
+    "homepage": "https://github.com/edersoares/curio",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Eder Soares",
+            "email": "edersoares@me.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "illuminate/contracts": "^12.0||^13.0",
+        "illuminate/database": "^12.0||^13.0",
+        "illuminate/http": "^12.0||^13.0",
+        "illuminate/pagination": "^12.0||^13.0",
+        "illuminate/support": "^12.0||^13.0",
+        "illuminate/validation": "^12.0||^13.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.14",
+        "larastan/larastan": "^3.0",
+        "orchestra/testbench": "^11.0.0||^10.0.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "phpstan/extension-installer": "^1.4",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "phpstan/phpstan-phpunit": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Dex\\Laravel\\Curio\\": "src",
+            "Dex\\Laravel\\Curio\\Database\\Factories\\": "database/factories",
+            "Dex\\Laravel\\Curio\\Database\\Seeders\\": "database/seeders"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Dex\\Laravel\\Curio\\Tests\\": "tests/",
+            "Dex\\Laravel\\Curio\\Workbench\\App\\": "workbench/app/",
+            "Dex\\Laravel\\Curio\\Workbench\\Database\\Factories\\": "workbench/database/factories/",
+            "Dex\\Laravel\\Curio\\Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": "@composer run prepare",
+        "prepare": "@php vendor/bin/testbench package:discover --ansi",
+        "analyse": "vendor/bin/phpstan analyse",
+        "coverage": "XDEBUG_MODE=coverage vendor/bin/pest --coverage --parallel",
+        "format": "vendor/bin/pint --parallel",
+        "mutate": "XDEBUG_MODE=coverage vendor/bin/pest --mutate --covered-only --everything --parallel --min=80",
+        "test": "vendor/bin/pest"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Dex\\Laravel\\Curio\\Providers\\CurioServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

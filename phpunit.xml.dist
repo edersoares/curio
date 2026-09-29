@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  failOnIncomplete/failOnRisky: most of this suite is written as
+  `->expect(fn () => ...)->throws(...)`, and when the expected exception stops
+  being thrown the test performs no assertion at all - which PHPUnit reports as
+  incomplete/risky and, by default, still exits 0. Mutation testing surfaced
+  this: a mutant that removed a validation guard left the suite green. With
+  these two flags a test that no longer asserts anything is a failure.
+-->
+<phpunit bootstrap="vendor/autoload.php" colors="true" failOnIncomplete="true" failOnRisky="true">
+  <testsuites>
+    <testsuite name="default">
+      <directory suffix="Test.php">tests</directory>
+    </testsuite>
+  </testsuites>
+  <coverage/>
+  <source>
+    <include>
+      <directory suffix=".php">src</directory>
+    </include>
+  </source>
+</phpunit>

@@ -1,0 +1,35 @@
+name: Mutation
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    name: mutation
+    runs-on: ubuntu-latest
+    # A full run rewrites ~1600 pieces of src/ and reruns the covering tests for
+    # each one, so it is measured in tens of minutes - which is also why this
+    # only runs weekly against main and on demand, never on pull requests or pushes.
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, intl, fileinfo
+          coverage: xdebug
+
+      - name: Install composer dependencies
+        uses: ramsey/composer-install@v4
+
+      - name: Run mutation testing
+        run: composer mutate
