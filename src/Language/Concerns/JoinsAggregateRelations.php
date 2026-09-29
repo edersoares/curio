@@ -16,12 +16,11 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Resolves an Eloquent relation for the `:@join` aggregate modifier and adds
- * the matching `LEFT JOIN` to the builder. Deliberately duplicates (rather
- * than shares) `Sorting`'s relation-join key resolution: `Sorting` only ever
- * needs `BelongsTo`/`HasOne` (single related row per parent, required for a
- * safe `ORDER BY`), while this trait also needs `HasMany` - safe here because
- * the caller always follows the join with a `GROUP BY`, which collapses the
- * duplicated parent rows a one-to-many join produces.
+ * the matching `LEFT JOIN` to the builder. A join is safe here, including
+ * for `HasMany`, because the caller always follows it with a `GROUP BY`,
+ * which collapses the duplicated parent rows a one-to-many join produces -
+ * the very reason `Sorting`, which has no `GROUP BY` to lean on, orders by a
+ * correlated subquery instead of joining.
  *
  * @phpstan-type SupportedJoinRelation BelongsTo<Model, Model>|HasOneOrMany<Model, Model, mixed>
  */

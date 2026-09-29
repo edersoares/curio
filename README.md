@@ -205,7 +205,7 @@ public function searchMode(): string
 
 ### Sorting (`sort`)
 
-Space-separated field list, prefix `-` for descending: `sort=-published_at title`. Only fields declared in `sortBy()` are allowed. Sorting by a related model's column (`author.name`) is supported for `BelongsTo`/`HasOne` relations and is applied via an automatic `JOIN`. Adding a per-field `:@unaccent` modifier (e.g. `sort=email:@unaccent`) orders by `unaccent(lower(field))` instead — PostgreSQL only.
+Space-separated field list, prefix `-` for descending: `sort=-published_at title`. Only fields declared in `sortBy()` are allowed. Sorting by a related model's column (`author.name`) is applied through a correlated subquery rather than a `JOIN`, so sorting never changes which rows come back: a parent is returned once however many related rows it has, and a parent with no related row is kept (its sort value is `NULL`). The subquery carries the relation's own constraints and ordering — `latestPost.title` sorts by the latest post's title — and only one relation level is supported (`relation.column`). A relation column can't be sorted alongside `aggregate=`. Adding a per-field `:@unaccent` modifier (e.g. `sort=email:@unaccent`) orders by `unaccent(lower(field))` instead — PostgreSQL only.
 
 ### Including (`include`)
 
@@ -266,7 +266,7 @@ Every item must carry one role token — a bare field with no `@` token is inval
 | `relation:@count:@join` / `relation:@sum(col):@join`                | Aggregates a **related** table's column via a real `LEFT JOIN` instead of a subquery — `relation` here is a relation name, `col` a column on the related table |
 | `relation:@group(col):@join`                                        | Groups by a related table's column via the same shared `LEFT JOIN`          |
 
-`:@join` only supports `BelongsTo`/`HasOne`/`HasMany` relations (not many-to-many or polymorphic), and only one relation may be joined per request — join two different relations and validation rejects it (the classic SQL "fan-out" problem). Combining `:@join` with `sort=` by a relation column is also rejected, since `Sorting`'s own join would silently discard the `SELECT` this builds.
+`:@join` only supports `BelongsTo`/`HasOne`/`HasMany` relations (not many-to-many or polymorphic), and only one relation may be joined per request — join two different relations and validation rejects it (the classic SQL "fan-out" problem). Combining any `aggregate=` with `sort=` by a relation column is also rejected: an aggregated query returns one row per group, not per parent, so there is no parent row for the sort to look its related column up from.
 
 `expr` inside `@having(...)` uses the same value grammar as `filter` (`>=100`, `10..20` as `BETWEEN`, `10,20,30` as `IN`, `*text*` as `LIKE`, `null`/`filled`) and a leading `-` for negation (there's no key here to prefix, so the `-` goes on the expression itself: `@having(-10..20)` is `NOT BETWEEN`). It's applied directly against that one aggregate expression — no alias lookup involved, unlike a top-level `filter=`.
 

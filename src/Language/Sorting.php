@@ -8,8 +8,6 @@ use Dex\Laravel\Curio\Contracts\Applier;
 use Dex\Laravel\Curio\Query\PaginateQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Validation\ValidationException;
 
@@ -103,7 +101,9 @@ class Sorting implements Applier
      */
     private function resolveSortRelation(Model $model, string $relation, string $key): Relation
     {
-        $related = $model->isRelation($relation) ? $model->{$relation}() : null;
+        $related = $model->isRelation($relation)
+            ? Relation::noConstraints(fn () => $model->{$relation}())
+            : null;
 
         if (!$related instanceof Relation) {
             throw ValidationException::withMessages([
@@ -121,50 +121,106 @@ class Sorting implements Applier
     private function applySort(Builder $builder, array $token): void
     {
         $key = $token['key'];
-        $desc = $token['negated'];
-        $modifiers = $token['modifiers'];
+        $direction = $token['negated'] ? 'desc' : 'asc';
+        $unaccent = array_key_exists('unaccent', $token['modifiers']);
 
         if (str_contains($key, '.')) {
-            [$relation] = explode('.', $key);
+            $this->applyRelationSort($builder, $key, $direction, $unaccent);
 
-            $model = $builder->getModel();
-            $table = $model->getTable();
-
-            $related = $this->resolveSortRelation($model, $relation, $key);
-
-            if ($related instanceof BelongsTo) {
-                $builder->join(
-                    $related->getModel()->getTable(),
-                    $related->getQualifiedOwnerKeyName(),
-                    '=',
-                    $related->getQualifiedForeignKeyName(),
-                );
-            }
-
-            if ($related instanceof HasOne) {
-                $builder->join(
-                    $related->getModel()->getTable(),
-                    $related->getQualifiedForeignKeyName(),
-                    '=',
-                    $related->getQualifiedParentKeyName(),
-                );
-            }
-
-            $key = str_replace($relation, $related->getModel()->getTable(), $key);
-            $builder->addSelect($table . '.*');
+            return;
         }
 
-        if (array_key_exists('unaccent', $modifiers)) {
+        if ($unaccent) {
             $wrapped = $builder->getQuery()->getGrammar()->wrap($key);
-
-            $direction = $desc ? 'desc' : 'asc';
 
             // @phpstan-ignore-next-line argument.type (orderByRaw() requires literal-string - Laravel generic bound, not satisfiable by SQL built from a runtime column name)
             $builder->orderByRaw('unaccent(lower(' . $wrapped . ')) ' . $direction);
-        } elseif ($desc) {
-            $builder->orderByDesc($key);
-        } else {
-            $builder->orderBy($key);
+
+            return;
+        }
+
+        $builder->orderBy($key, $direction);
+    }
+
+    /**
+     * Orders by a related model's column through a correlated subquery, not
+     * a `JOIN`. Sorting is supposed to change the order of the rows and
+     * nothing else, and a join can't promise that: an `INNER JOIN` on a
+     * `HasOne` repeated the parent once per related row (`latestPost` is a
+     * `hasOne` over a table holding many posts per author) and dropped every
+     * parent with no related row at all, so `sort=` changed both the rows on
+     * the page and the paginator's total. It also had to add `table.*` to
+     * the `SELECT` to keep the joined table's columns from overwriting the
+     * parent's, which silently undid a `select=` sent with it.
+     *
+     * A subquery limited to one row yields exactly one value per parent
+     * (`NULL` when there is no related row), and it carries the relation's
+     * own constraints and ordering - which is what makes `latestPost.title`
+     * sort by the *latest* post rather than by an arbitrary one.
+     *
+     * @param Builder<Model> $builder
+     * @param 'asc'|'desc' $direction
+     */
+    private function applyRelationSort(Builder $builder, string $key, string $direction, bool $unaccent): void
+    {
+        [$relation, $column] = explode('.', $key, 2);
+
+        $this->guardRelationSort($builder, $key, $column);
+
+        $related = $this->resolveSortRelation($builder->getModel(), $relation, $key);
+
+        $subquery = $related
+            ->getRelationExistenceQuery($related->getRelated()->newQuery(), $builder, [])
+            ->mergeConstraintsFrom($related->getQuery())
+            ->toBase();
+
+        // A self-referencing relation is aliased by Eloquent
+        // (`"author" as "laravel_reserved_0"`), so the column has to be
+        // qualified by whatever the subquery itself calls its table.
+        $table = $subquery->from;
+
+        assert(is_string($table));
+
+        $segments = preg_split('/\s+as\s+/i', $table);
+        $qualifier = $segments === false ? $table : end($segments);
+
+        $subquery->select($qualifier . '.' . $column);
+        $subquery->orders = $related->getQuery()->getQuery()->orders;
+        $subquery->limit(1);
+
+        if ($unaccent) {
+            // @phpstan-ignore-next-line argument.type (orderByRaw() requires literal-string - Laravel generic bound, not satisfiable by SQL built from a runtime subquery)
+            $builder->orderByRaw('unaccent(lower((' . $subquery->toSql() . '))) ' . $direction, $subquery->getBindings());
+
+            return;
+        }
+
+        $builder->orderBy($subquery, $direction);
+    }
+
+    /**
+     * Two shapes a relation sort can't take. A key nested deeper than
+     * `relation.column` has no single related table to read the column
+     * from. And a query that is already grouped or joined (`aggregate=`)
+     * returns one row per group, not per parent, so there is no parent row
+     * left for the subquery to correlate with.
+     *
+     * @param Builder<Model> $builder
+     */
+    private function guardRelationSort(Builder $builder, string $key, string $column): void
+    {
+        if (str_contains($column, '.')) {
+            throw ValidationException::withMessages([
+                'sort' => ["The field '$key' is not allowed to sort: only one relation level is supported."],
+            ]);
+        }
+
+        $query = $builder->getQuery();
+
+        if (!empty($query->groups) || !empty($query->joins)) {
+            throw ValidationException::withMessages([
+                'sort' => ["The field '$key' is not allowed to sort: a relation column can't be sorted alongside 'aggregate'."],
+            ]);
         }
     }
 }

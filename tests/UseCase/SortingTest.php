@@ -20,21 +20,21 @@ describe('model sorting', function () {
 describe('belongs to relation', function () {
     test('`asc` sort')
         ->expect(fn () => Post::curio()->sort('author.name')->toRawSql())
-        ->toBe('select "post".* from "post" inner join "author" on "author"."id" = "post"."author_id" order by "author"."name" asc');
+        ->toBe('select * from "post" order by (select "author"."name" from "author" where "post"."author_id" = "author"."id" limit 1) asc');
 
     test('`desc` sort')
         ->expect(fn () => Post::curio()->sort('-author.name')->toRawSql())
-        ->toBe('select "post".* from "post" inner join "author" on "author"."id" = "post"."author_id" order by "author"."name" desc');
+        ->toBe('select * from "post" order by (select "author"."name" from "author" where "post"."author_id" = "author"."id" limit 1) desc');
 });
 
 describe('has one to relation', function () {
     test('`asc` sort')
         ->expect(fn () => Author::curio()->sort('latestPost.title')->toRawSql())
-        ->toBe('select "author".* from "author" inner join "post" on "post"."author_id" = "author"."id" order by "post"."title" asc');
+        ->toBe('select * from "author" order by (select "post"."title" from "post" where "author"."id" = "post"."author_id" order by "created_at" desc limit 1) asc');
 
     test('`desc` sort')
         ->expect(fn () => Author::curio()->sort('-latestPost.title')->toRawSql())
-        ->toBe('select "author".* from "author" inner join "post" on "post"."author_id" = "author"."id" order by "post"."title" desc');
+        ->toBe('select * from "author" order by (select "post"."title" from "post" where "author"."id" = "post"."author_id" order by "created_at" desc limit 1) desc');
 });
 
 describe(':@unaccent modifier', function () {
@@ -84,4 +84,74 @@ describe('validation errors', function () {
             return $model::curio($model->newQuery())->sort('truncate.x')->toRawSql();
         })
         ->throws(ValidationException::class, "The field 'truncate.x' is not allowed to sort.");
+});
+
+/**
+ * Sorting changes the order of the rows and nothing else. The relation sort
+ * used to be an `INNER JOIN`, which repeated a parent once per related row,
+ * dropped every parent with no related row, and - through the `table.*` it
+ * had to add to the `SELECT` - undid a `select=` sent alongside it.
+ */
+describe('relation sort keeps the result set intact', function () {
+    beforeEach(function () {
+        $this->ada = Author::factory()->create(['name' => 'Ada']);
+        $this->bob = Author::factory()->create(['name' => 'Bob']);
+        $this->cid = Author::factory()->create(['name' => 'Cid']);
+
+        Post::factory()->create(['author_id' => $this->ada->id, 'title' => 'Zebra', 'created_at' => '2026-01-01 00:00:00']);
+        Post::factory()->create(['author_id' => $this->ada->id, 'title' => 'Mango', 'created_at' => '2026-03-01 00:00:00']);
+        Post::factory()->create(['author_id' => $this->ada->id, 'title' => 'Apple', 'created_at' => '2026-02-01 00:00:00']);
+        Post::factory()->create(['author_id' => $this->bob->id, 'title' => 'Banana', 'created_at' => '2026-01-01 00:00:00']);
+    });
+
+    test('a parent with many related rows is returned once', function () {
+        $ids = Author::curio()->sort('latestPost.title')->get()->pluck('id')->sort()->values()->all();
+
+        expect($ids)->toBe([$this->ada->id, $this->bob->id, $this->cid->id]);
+    });
+
+    test('a parent with no related row is kept')
+        ->expect(fn () => Author::curio()->sort('latestPost.title')->get()->pluck('name')->all())
+        ->toContain('Cid');
+
+    test('orders by the row the relation itself resolves to - the latest post, not any post')
+        ->expect(fn () => Author::curio()->sort('latestPost.title')->whereKey([$this->ada->id, $this->bob->id])->get()->pluck('name')->all())
+        ->toBe(['Bob', 'Ada']); // Banana < Mango (Ada's latest), although Ada also wrote "Apple"
+
+    test('descending order')
+        ->expect(fn () => Author::curio()->sort('-latestPost.title')->whereKey([$this->ada->id, $this->bob->id])->get()->pluck('name')->all())
+        ->toBe(['Ada', 'Bob']);
+
+    test('the paginator total is the number of parents', function () {
+        $response = $this->getJson('api/author?' . http_build_query(['sort' => 'latestPost.title']));
+
+        $response->assertOk();
+
+        expect($response->json('meta.total'))->toBe(3);
+        expect(collect($response->json('data'))->pluck('id')->sort()->values()->all())
+            ->toBe([$this->ada->id, $this->bob->id, $this->cid->id]);
+    });
+
+    test('a `select=` sent alongside is respected')
+        ->expect(fn () => Author::curio()->select('id name')->sort('latestPost.title')->toRawSql())
+        ->toBe('select "author"."id", "author"."name" from "author" order by (select "post"."title" from "post" where "author"."id" = "post"."author_id" order by "created_at" desc limit 1) asc');
+
+    test('`:@unaccent` wraps the subquery')
+        ->expect(fn () => Post::curio()->sort('author.name:@unaccent')->toRawSql())
+        ->toBe('select * from "post" order by unaccent(lower((select "author"."name" from "author" where "post"."author_id" = "author"."id" limit 1))) asc');
+
+    test('a belongs to sort keeps a child whose parent is missing', function () {
+        $orphan = Post::factory()->create(['title' => 'Orphan']);
+        $orphan->author()->delete();
+
+        expect(Post::curio()->sort('author.name')->get()->pluck('title')->all())->toContain('Orphan');
+    });
+
+    test('a relation column is rejected alongside a grouped aggregate')
+        ->expect(fn () => Author::curio()->aggregate('name:@group *:@count')->sort('latestPost.title')->toRawSql())
+        ->throws(ValidationException::class, "The field 'latestPost.title' is not allowed to sort: a relation column can't be sorted alongside 'aggregate'.");
+
+    test('a relation column is rejected alongside a joined aggregate')
+        ->expect(fn () => Author::curio()->aggregate('name:@group posts:@count:@join')->sort('latestPost.title')->toRawSql())
+        ->throws(ValidationException::class, "The field 'latestPost.title' is not allowed to sort: a relation column can't be sorted alongside 'aggregate'.");
 });
