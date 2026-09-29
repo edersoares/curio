@@ -54,7 +54,8 @@
         "coverage": "XDEBUG_MODE=coverage vendor/bin/pest --coverage --parallel",
         "format": "vendor/bin/pint --parallel",
         "mutate": "XDEBUG_MODE=coverage vendor/bin/pest --mutate --covered-only --everything --parallel --min=80",
-        "test": "vendor/bin/pest"
+        "test": "vendor/bin/pest",
+        "test:postgres": "vendor/bin/pest --testsuite=postgres"
     },
     "config": {
         "sort-packages": true,

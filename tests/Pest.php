@@ -3,11 +3,24 @@
 declare(strict_types=1);
 
 use Dex\Laravel\Curio\Curio;
+use Dex\Laravel\Curio\Tests\Postgres\UsesPostgres;
 use Dex\Laravel\Curio\Tests\TestCase;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 
 uses(TestCase::class)->in(__DIR__);
+
+/**
+ * `pg_trgm` and `unaccent` are what the `trgm`/`unaccent` search modes and
+ * `sort=field:@unaccent` call into. Curio doesn't enable either - that is the
+ * application's call - so the suite does it for itself.
+ */
+uses(UsesPostgres::class)
+    ->beforeEach(function () {
+        DB::statement('create extension if not exists pg_trgm');
+        DB::statement('create extension if not exists unaccent');
+    })
+    ->in('Postgres');
 
 /**
  * Runs the expectation's closure while listening for every query dispatched

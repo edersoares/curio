@@ -504,9 +504,22 @@ composer analyse  # PHPStan static analysis
 composer format   # Laravel Pint code style fixer
 composer coverage # test coverage with Xdebug
 composer mutate   # mutation testing with Xdebug (slow - takes minutes)
+composer test:postgres # the suite that executes against a real PostgreSQL server
 
 vendor/bin/pest tests/path/to/Test.php --filter "test name" # run a single test
 ```
+
+### PostgreSQL suite
+
+`composer test` runs on an in-memory SQLite, and most of it asserts the SQL Curio *builds* — which never reaches a database. That is no proof for what only PostgreSQL can run (the `trgm` and `unaccent` search modes, `sort=field:@unaccent`, `EXTRACT()`, `jsonb` containment), so those have a suite of their own, under `tests/Postgres`, that executes every query against a real server:
+
+```bash
+docker run --rm -d --name curio-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=curio -p 5432:5432 postgres:17-alpine
+
+CURIO_POSTGRES_URL=pgsql://postgres:postgres@127.0.0.1:5432/curio composer test:postgres
+```
+
+The suite enables the `pg_trgm` and `unaccent` extensions itself, so the user in the URL has to be allowed to. Without `CURIO_POSTGRES_URL` every test in it is skipped rather than failed; CI runs it with `--fail-on-skipped`, against every supported PostgreSQL version.
 
 ### Mutation testing
 

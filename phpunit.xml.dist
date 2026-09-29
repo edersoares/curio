@@ -6,11 +6,19 @@
   incomplete/risky and, by default, still exits 0. Mutation testing surfaced
   this: a mutant that removed a validation guard left the suite green. With
   these two flags a test that no longer asserts anything is a failure.
+
+  Two suites: `default` runs on an in-memory SQLite and is what `composer test`
+  means; `postgres` (tests/Postgres) executes against a real PostgreSQL server
+  and only runs when asked for (`composer test:postgres`), since it needs one.
 -->
-<phpunit bootstrap="vendor/autoload.php" colors="true" failOnIncomplete="true" failOnRisky="true">
+<phpunit bootstrap="vendor/autoload.php" colors="true" failOnIncomplete="true" failOnRisky="true" defaultTestSuite="default">
   <testsuites>
     <testsuite name="default">
       <directory suffix="Test.php">tests</directory>
+      <exclude>tests/Postgres</exclude>
+    </testsuite>
+    <testsuite name="postgres">
+      <directory suffix="Test.php">tests/Postgres</directory>
     </testsuite>
   </testsuites>
   <coverage/>

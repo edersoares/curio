@@ -65,3 +65,54 @@ jobs:
 
       - name: Execute tests
         run: vendor/bin/pest --ci
+
+  # The matrix above runs on an in-memory SQLite and mostly asserts the SQL
+  # Curio builds. This job executes what only PostgreSQL can run - the `trgm`
+  # and `unaccent` search modes, `sort=field:@unaccent`, `EXTRACT()`, `jsonb`
+  # containment - against a real server.
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: [18, 17, 16]
+
+    name: PostgreSQL ${{ matrix.postgres }}
+
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: curio
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CURIO_POSTGRES_URL: pgsql://postgres:postgres@127.0.0.1:5432/curio
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pgsql, pdo_pgsql, bcmath, intl, fileinfo
+          coverage: none
+
+      - name: Install composer dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      # The suite skips itself when it has no server to talk to, which is
+      # right on a laptop and wrong here: a job that skipped everything would
+      # still be green.
+      - name: Execute tests
+        run: vendor/bin/pest --testsuite=postgres --ci --fail-on-skipped
