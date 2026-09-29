@@ -360,7 +360,7 @@ public function replaceBy(): array
 
 ## Fluent querying without a `PaginateQuery`
 
-For trusted, developer-authored strings (not raw HTTP input) — internal tooling, jobs, tinker — `use Dex\Laravel\Curio\YourCuriosity;` on a model to get a `Model::curio()` fluent builder that speaks the same `filter=`/`sort=`/`select=`/`aggregate=`/`include=`/`cast=` syntax, but skips `PaginateQuery` allow-list validation entirely:
+`use Dex\Laravel\Curio\YourCuriosity;` on a model to get a `Model::curio()` fluent builder that speaks the same `filter=`/`sort=`/`select=`/`aggregate=`/`include=`/`cast=` syntax — handy for internal tooling, jobs and tinker, where there is no request to hang a `PaginateQuery` on. It runs the exact same pipeline as the HTTP path, validation included: the allow-lists just come from the model itself, which declares the same `filterBy()`/`sortBy()`/`selectBy()`/`aggregateBy()`/`includeBy()`/`castBy()` methods a `PaginateQuery` would. Anything the model doesn't declare is rejected with a `ValidationException`, and a model that declares nothing allows nothing.
 
 ```php
 use Dex\Laravel\Curio\YourCuriosity;
@@ -368,9 +368,24 @@ use Dex\Laravel\Curio\YourCuriosity;
 class Post extends Model
 {
     use YourCuriosity;
+
+    public function filterBy(): array
+    {
+        return [
+            'title' => ['string'],
+            'published_at' => ['date'],
+        ];
+    }
+
+    public function sortBy(): array
+    {
+        return ['title', 'published_at'];
+    }
 }
 
 Post::curio()->filter('title:*laravel*')->sort('-published_at')->get();
+
+Post::curio()->filter('content:*laravel*')->get(); // ValidationException: The field 'content' is not allowed on query filter.
 ```
 
 Every DSL method (`filter()`, `sort()`, `select()`, `aggregate()`, `include()`, `cast()`) only queues its argument — nothing touches the builder until `get()`/`paginate()` runs, or a forwarded builder call does. Free-text search works here too, keyed off `searchBy()` — implement `Dex\Laravel\Curio\Contracts\Searchable` (typically via the `Query\SearchBy` trait) directly on the model:

@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Traits\ForwardsCalls;
 
 /**
- * Fluent, trusted DSL access directly against an Eloquent builder - applies
+ * Fluent DSL access directly against an Eloquent builder - applies
  * the same `filter=`/`sort=`/`select=`/`aggregate=`/`include=`/`cast=` syntax
  * as the `PaginateQuery`/`PaginateRequest`/`Paginator` pipeline, and shares
  * its exact validation pipeline. Every allow-list -
@@ -173,7 +173,7 @@ class Curio
 
     /**
      * Adapts a `YourCuriosity`-using model to look like a `PaginateQuery`, so
-     * the trusted (unbound) path can share the exact same pipeline as the
+     * the unbound path can share the exact same pipeline as the
      * `withQuery()`-bound path instead of duplicating it - every allow-list/
      * default delegates straight to the model's own `YourCuriosity` trait
      * methods, `castBy()`/`castMutator()`/`defaultCast()` included, since
