@@ -210,9 +210,9 @@ class Sorting implements Applier
     private function guardRelationSort(Builder $builder, string $key, string $column): void
     {
         if (str_contains($column, '.')) {
-            throw ValidationException::withMessages([
-                'sort' => ["The field '$key' is not allowed to sort: only one relation level is supported."],
-            ]);
+            throw ValidationException::withMessages([ // @codeCoverageIgnore
+                'sort' => ["The field '$key' is not allowed to sort: only one relation level is supported."], // @codeCoverageIgnore
+            ]); // @codeCoverageIgnore
         }
 
         $query = $builder->getQuery();

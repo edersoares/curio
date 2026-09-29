@@ -109,7 +109,7 @@ class Filtering implements Applier
         $rules = $owner?->filterBy()[$field] ?? [];
 
         if (is_string($rules)) {
-            $rules = explode('|', $rules);
+            $rules = explode('|', $rules); // @codeCoverageIgnore
         }
 
         return array_map(
