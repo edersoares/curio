@@ -7,7 +7,7 @@ namespace Dex\Laravel\Curio\Listeners;
 use Dex\Laravel\Curio\Events\ApplyPending;
 
 /**
- * The first step `Pipeline` runs for an `ApplyPending` batch, so
+ * Runs in `Pipeline` before any step that reads a key, so
  * every filter/sort/select/aggregate/cast token has its `key` resolved
  * through `$query->replaceBy()` before any type-specific step runs.
  *

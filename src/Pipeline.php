@@ -10,6 +10,7 @@ use Dex\Laravel\Curio\Listeners\AggregateListener;
 use Dex\Laravel\Curio\Listeners\AllowSortAggregates;
 use Dex\Laravel\Curio\Listeners\AllowSortIncludes;
 use Dex\Laravel\Curio\Listeners\CastListener;
+use Dex\Laravel\Curio\Listeners\EnforceLimits;
 use Dex\Laravel\Curio\Listeners\FilterListener;
 use Dex\Laravel\Curio\Listeners\IncludeListener;
 use Dex\Laravel\Curio\Listeners\NegatedOperator;
@@ -40,14 +41,16 @@ use Dex\Laravel\Curio\Listeners\WhereOperator;
 class Pipeline
 {
     /**
-     * Order matters: `ReplaceKeys` resolves `replaceBy()` aliases before any
-     * step reads a key, and `AllowSortAggregates`/`AllowSortIncludes`/
+     * Order matters: `EnforceLimits` rejects an oversized batch before any
+     * step spends anything on it, `ReplaceKeys` resolves `replaceBy()`
+     * aliases before any step reads a key, and `AllowSortAggregates`/`AllowSortIncludes`/
      * `IncludeListener` register this request's aggregate and include
      * aliases as sortable before `SortListener` validates against them.
      *
      * @var list<class-string>
      */
     protected const array PENDING = [
+        EnforceLimits::class,
         ReplaceKeys::class,
         FilterListener::class,
         SelectListener::class,

@@ -15,6 +15,42 @@ return [
         'sort' => 'sort',
     ],
 
+    'filter' => [
+        /**
+         * Maximum number of clauses accepted in one `filter=` string, counted
+         * after presets are expanded. Every clause is allow-listed, but each
+         * one is a `WHERE` of its own - and a relation clause
+         * (`posts.title:x`) a whole `EXISTS` subquery - so a request is cheap
+         * to write and arbitrarily expensive to run. Override per endpoint
+         * with `PaginateQuery::maxFilterClauses()`.
+         */
+        'max_clauses' => 50,
+
+        /**
+         * Maximum number of relations a filter key may go through
+         * (`posts.author.name` goes through 2). Relation chains can cycle
+         * (`posts.author.posts...`), and every level nests another `EXISTS`.
+         * Override per endpoint with `PaginateQuery::maxFilterDepth()`.
+         */
+        'max_depth' => 3,
+    ],
+
+    'sort' => [
+        /**
+         * Maximum number of fields accepted in `sort=`. Override per
+         * endpoint with `PaginateQuery::maxSortFields()`.
+         */
+        'max_fields' => 5,
+    ],
+
+    'aggregate' => [
+        /**
+         * Maximum number of items accepted in `aggregate=`. Override per
+         * endpoint with `PaginateQuery::maxAggregateItems()`.
+         */
+        'max_items' => 10,
+    ],
+
     'include' => [
         /**
          * Maximum relation nesting depth accepted in `include=`. Relation
@@ -26,6 +62,12 @@ return [
          * `PaginateQuery::maxIncludeDepth()`.
          */
         'max_depth' => 3,
+
+        /**
+         * Maximum number of relations accepted in `include=`. Override per
+         * endpoint with `PaginateQuery::maxIncludeRelations()`.
+         */
+        'max_relations' => 10,
     ],
 
     'paginate' => [

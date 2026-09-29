@@ -50,4 +50,17 @@ trait SortBy
     {
         return array_values(array_unique([...$this->sortBy(), ...$this->dynamicSortColumns]));
     }
+
+    /**
+     * How many fields `sort=` may carry, backed by
+     * `config('curio.sort.max_fields')`.
+     */
+    public function maxSortFields(): int
+    {
+        $value = config('curio.sort.max_fields');
+
+        assert(is_int($value));
+
+        return $value;
+    }
 }

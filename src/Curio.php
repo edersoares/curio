@@ -230,6 +230,36 @@ class Curio
                 return $this->model->castMutator();
             }
 
+            public function maxFilterClauses(): int
+            {
+                return $this->model->maxFilterClauses();
+            }
+
+            public function maxFilterDepth(): int
+            {
+                return $this->model->maxFilterDepth();
+            }
+
+            public function maxSortFields(): int
+            {
+                return $this->model->maxSortFields();
+            }
+
+            public function maxAggregateItems(): int
+            {
+                return $this->model->maxAggregateItems();
+            }
+
+            public function maxIncludeDepth(): int
+            {
+                return $this->model->maxIncludeDepth();
+            }
+
+            public function maxIncludeRelations(): int
+            {
+                return $this->model->maxIncludeRelations();
+            }
+
             public function searchBy(): array
             {
                 return $this->model instanceof Searchable ? $this->model->searchBy() : [];

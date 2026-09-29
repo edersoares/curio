@@ -345,13 +345,13 @@ Subclass `Dex\Laravel\Curio\Query\PaginateQuery` and override what you need — 
 | `sortBy()`                                                                                                            | `['field', ...]`                          | Allowed sort fields                                                                                                            |
 | `allowSort(string ...$columns)` | `static` | Adds sortable fields to one instance, on top of `sortBy()` — for a query built per request (`getPaginateQuery()` may return an instance instead of a class name) |
 | `includeBy()`                                                                                                         | `['relation' => QueryClass::class]`       | Allowed eager-loads, each linked to its own `PaginateQuery`                                                                    |
-| `maxIncludeDepth()` | `int` | Maximum relation nesting depth of one `include=` item, backed by `config('curio.include.max_depth')` |
 | `selectBy()`                                                                                                          | `['field', ...]`                          | Allowed select fields                                                                                                          |
 | `aggregateBy()`                                                                                                       | `['field', ...]`                          | Allowed fields referenceable inside `aggregate` (both `@group` targets and aggregate source columns)                           |
 | `castBy()` / `castMutator()`                                                                                          | `['field', ...]` / `['castName' => resolver]` | Allowed cast fields and the named resolvers available to `cast=` — see [Casting](#casting-cast)                           |
 | `replaceBy()`                                                                                                         | `['alias' => 'real_field']`               | Field aliases (URL-friendly names → real keys) — applies to `filter`/`sort`/`select`/`aggregate`/`cast`, not `include`         |
 | `defaultFilter()` / `defaultSort()` / `defaultSelect()` / `defaultInclude()` / `defaultAggregate()` / `defaultCast()` | `string`                 | Applied when the request omits that query parameter                                                                            |
 | `defaultPageNumber()` / `defaultPageSize()` / `defaultMaxPageSize()`                                                  | `int`                                     | Pagination defaults, backed by `config('curio.paginate.*')`                                                                    |
+| `maxFilterClauses()` / `maxFilterDepth()` / `maxSortFields()` / `maxAggregateItems()` / `maxIncludeDepth()` / `maxIncludeRelations()` | `int` | How much one request may ask for, backed by `config('curio.*.max_*')` — exceeding a limit is a 422 under the parameter's own key |
 
 ### Field aliases
 
@@ -440,9 +440,28 @@ return [
         'default_max_page_size' => 250,
     ],
 
+    'filter' => [
+        // Maximum number of clauses in `filter=`, counted after presets are expanded.
+        'max_clauses' => 50,
+        // Maximum number of relations a filter key may go through.
+        'max_depth' => 3,
+    ],
+
+    'sort' => [
+        // Maximum number of fields in `sort=`.
+        'max_fields' => 5,
+    ],
+
+    'aggregate' => [
+        // Maximum number of items in `aggregate=`.
+        'max_items' => 10,
+    ],
+
     'include' => [
         // Maximum relation nesting depth accepted in `include=`.
         'max_depth' => 3,
+        // Maximum number of relations in `include=`.
+        'max_relations' => 10,
     ],
 
     'search' => [
@@ -455,7 +474,9 @@ return [
 
 Add your own `config/curio.php` with only the sections you want to change — the package's defaults are merged in for the rest.
 
-Defaults are merged one level deep: a top-level section you define (`query`, `paginate`, `include`, `search`) **replaces** the package's section, it isn't merged key by key. Copy the whole section you are changing — a `paginate` section holding only `default_page_size` leaves the other two keys undefined, and every request fails. `search` is the exception: its two keys fall back to their defaults (`like`, `0.3`) when absent.
+Defaults are merged one level deep: a top-level section you define (`query`, `paginate`, `filter`, `sort`, `aggregate`, `include`, `search`) **replaces** the package's section, it isn't merged key by key. Copy the whole section you are changing — a `paginate` section holding only `default_page_size` leaves the other two keys undefined, and every request fails. `search` is the exception: its two keys fall back to their defaults (`like`, `0.3`) when absent.
+
+The `max_*` keys bound how much a single request can ask the database to do — an allow-list limits which fields a request may name, not how many times it names them. Each one is the default for the matching `PaginateQuery` method (`maxFilterClauses()`, `maxFilterDepth()`, `maxSortFields()`, `maxAggregateItems()`, `maxIncludeDepth()`, `maxIncludeRelations()`), which a query can override for its own endpoint. Clauses are counted after presets are expanded, free text counts as a single clause, and a filter scoped to a relation (`include=posts:@filter(...)`) has a budget of its own.
 
 ## Extending Curio
 

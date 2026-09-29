@@ -268,6 +268,16 @@ class Filtering implements Applier
     {
         $segments = explode('.', $filter['key']);
         $leafField = array_pop($segments);
+        $maxDepth = $query->maxFilterDepth();
+
+        // Checked before the chain is walked: `includeBy()` can't bound it,
+        // since a chain may revisit a query class it already passed through
+        // (`posts.author.posts...`), and every level is another nested
+        // `EXISTS` - the same reason `include=` has `maxIncludeDepth()`.
+        if (count($segments) > $maxDepth) {
+            return ['filter' => ["The field '{$filter['key']}' is nested deeper than the maximum filter depth of {$maxDepth}."]];
+        }
+
         $current = $this->resolveRelationQuery($segments, $query);
 
         if ($current === null) {

@@ -49,4 +49,16 @@ interface Curious
      * @return array<string, array<mixed, mixed>|Collection<int|string, mixed>|(callable(mixed): mixed)>
      */
     public function castMutator(): array;
+
+    public function maxFilterClauses(): int;
+
+    public function maxFilterDepth(): int;
+
+    public function maxSortFields(): int;
+
+    public function maxAggregateItems(): int;
+
+    public function maxIncludeDepth(): int;
+
+    public function maxIncludeRelations(): int;
 }

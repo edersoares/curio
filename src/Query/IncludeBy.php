@@ -34,4 +34,18 @@ trait IncludeBy
 
         return $value;
     }
+
+    /**
+     * How many relations `include=` may carry, backed by
+     * `config('curio.include.max_relations')` - `maxIncludeDepth()` bounds
+     * how deep one of them goes, not how many there are.
+     */
+    public function maxIncludeRelations(): int
+    {
+        $value = config('curio.include.max_relations');
+
+        assert(is_int($value));
+
+        return $value;
+    }
 }
