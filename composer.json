@@ -36,9 +36,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Dex\\Laravel\\Curio\\": "src",
-            "Dex\\Laravel\\Curio\\Database\\Factories\\": "database/factories",
-            "Dex\\Laravel\\Curio\\Database\\Seeders\\": "database/seeders"
+            "Dex\\Laravel\\Curio\\": "src"
         }
     },
     "autoload-dev": {

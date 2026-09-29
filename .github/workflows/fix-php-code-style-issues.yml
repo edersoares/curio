@@ -1,7 +1,12 @@
 name: Fix PHP code style issues
 
+# Never on `main`: this job pushes a commit of its own, which a protected
+# branch rejects - and should. Every other branch is fixed before it merges,
+# so `main` only ever receives code that is already formatted.
 on:
   push:
+    branches-ignore:
+      - main
     paths:
       - '**.php'
 
@@ -15,14 +20,14 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.head_ref }}
 
       - name: Fix PHP code style issues
-        uses: aglipanci/laravel-pint-action@2.6
+        uses: aglipanci/laravel-pint-action@36de00d5f5a8a4e12d443e01671daa12a18f4c79 # 2.6
 
       - name: Commit changes
-        uses: stefanzweifel/git-auto-commit-action@v7
+        uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
         with:
           commit_message: Fix styling
