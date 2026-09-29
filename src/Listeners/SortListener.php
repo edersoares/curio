@@ -8,8 +8,8 @@ use Dex\Laravel\Curio\Events\ApplyPending;
 use Dex\Laravel\Curio\Language\Sorting;
 
 /**
- * Registered after `IncludeListener`/`AllowSortAggregates` in
- * `CurioServiceProvider::boot()` - both mutate `$query`'s sortable-column
+ * Runs after `IncludeListener`/`AllowSortAggregates` in `Pipeline` - both
+ * mutate `$query`'s sortable-column
  * allow-list (`allowSort()`) as a side effect, which this listener's
  * validation reads via `allowedSortColumns()`.
  */

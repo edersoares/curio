@@ -7,6 +7,7 @@ namespace Dex\Laravel\Curio\Listeners;
 use Dex\Laravel\Curio\Events\ApplyToken;
 use Dex\Laravel\Curio\Language\Concerns\TypedBuilderApplier;
 use Dex\Laravel\Curio\Language\Token;
+use Dex\Laravel\Curio\Pipeline;
 use Illuminate\Database\Eloquent\Builder;
 use RuntimeException;
 
@@ -62,6 +63,6 @@ class WhereOperator
             'key' => $key,
         ]);
 
-        $apply->builder->whereHas($relation, fn (Builder $query) => event(new ApplyToken($token, $query)));
+        $apply->builder->whereHas($relation, fn (Builder $query) => app(Pipeline::class)->token(new ApplyToken($token, $query)));
     }
 }

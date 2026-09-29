@@ -6,6 +6,7 @@ namespace Dex\Laravel\Curio\Language;
 
 use Dex\Laravel\Curio\Contracts\Applier;
 use Dex\Laravel\Curio\Events\ApplyPending;
+use Dex\Laravel\Curio\Pipeline;
 use Dex\Laravel\Curio\Query\PaginateQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -268,13 +269,12 @@ class Including implements Applier
     }
 
     /**
-     * Dispatches an `ApplyPending` event carrying this filter's tokens, so
-     * `Listeners\ReplaceKeys` and `Listeners\FilterListener` (already
-     * registered for `ApplyPending` in `CurioServiceProvider::boot()`) resolve
+     * Runs this filter's tokens through `Pipeline`, so
+     * `Listeners\ReplaceKeys` and `Listeners\FilterListener` resolve
      * `replaceBy()` aliases and apply the filter exactly as the top-level
      * pipeline does, instead of duplicating that logic here. Every other
-     * listener registered on `ApplyPending` filters on a different token
-     * `type` and no-ops; `Listeners\SearchListener` also fires - a
+     * step filters on a different token `type` and no-ops;
+     * `Listeners\SearchListener` also runs - a
      * relation-scoped `:@filter(some words)` now searches the relation's own
      * `searchBy()` too, same as free text does in the top-level `filter=`
      * pipeline.
@@ -290,7 +290,7 @@ class Including implements Applier
     {
         $tokens = $this->parser->transform($filter, 'filter');
 
-        event(new ApplyPending($tokens, $builder, $query));
+        app(Pipeline::class)->pending(new ApplyPending($tokens, $builder, $query));
     }
 
     /**

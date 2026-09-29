@@ -7,6 +7,7 @@ namespace Dex\Laravel\Curio\Language;
 use Dex\Laravel\Curio\Contracts\Applier;
 use Dex\Laravel\Curio\Events\ApplyToken;
 use Dex\Laravel\Curio\Language\Concerns\NormalizesFilterClauses;
+use Dex\Laravel\Curio\Pipeline;
 use Dex\Laravel\Curio\Query\PaginateQuery;
 use Dex\Laravel\Curio\Support\Errors;
 use Illuminate\Database\Eloquent\Builder;
@@ -287,7 +288,7 @@ class Filtering implements Applier
     {
         $token = new Token($filter);
 
-        event(new ApplyToken($token, $builder));
+        app(Pipeline::class)->token(new ApplyToken($token, $builder));
     }
 
     /**

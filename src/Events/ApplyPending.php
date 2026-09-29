@@ -11,19 +11,22 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 
 /**
- * Dispatched once from `Curio::applyPendings()`, carrying every token queued
- * across all 6 fluent DSL methods since the last dispatch - each already
- * parsed via `Parser::transform()` at the point the fluent method was called,
- * and self-tagged with its own DSL type (`$token['type']`) by that same
- * call. Handled by one self-selecting listener per type (`Listeners\*`),
- * each filtering `$tokens` down to just its own type and delegating to the
- * matching `Contracts\Applier` - no central routing table, so a new listener
- * can hook this same event and act on tokens by any criteria it wants.
+ * Carries every token queued across all 6 fluent DSL methods since the last
+ * run - each already parsed via `Parser::transform()` at the point the
+ * fluent method was called, and self-tagged with its own DSL type
+ * (`$token['type']`) by that same call.
  *
- * `$tokens` is intentionally not `readonly` - `Listeners\ReplaceKeys` runs
- * first (see `CurioServiceProvider::boot()`) and rewrites every token's
- * `key` via `$query->replaceBy()` in place, so every listener after it
- * (including type listeners) already sees resolved keys.
+ * Dispatched by `Pipeline::pending()` as a hook, *before* anything is
+ * applied: a listener sees the batch exactly as it was parsed and may
+ * rewrite `$tokens`. The steps that validate and apply it (`Listeners\*`,
+ * one self-selecting step per type) are not listeners on this event - the
+ * `Pipeline` calls them directly right after, so they run whether or not
+ * the event was delivered.
+ *
+ * `$tokens` is intentionally not `readonly` - besides a hooked listener,
+ * `Listeners\ReplaceKeys` runs first in the `Pipeline` and rewrites every
+ * token's `key` via `$query->replaceBy()` in place, so every step after it
+ * already sees resolved keys.
  *
  * @phpstan-import-type FilterClause from Filtering
  */

@@ -31,11 +31,11 @@ use Illuminate\Support\Traits\ForwardsCalls;
  * *parsed* tokens into one unified `$pending` array - nothing touches the
  * builder until a query actually needs to run, via any forwarded builder
  * call (`get()`, `paginate()`, `first()`, ...) handled by `__call()`, which
- * dispatches one `ApplyPending` event carrying the whole batch. Each DSL
- * type's own listener (`Listeners\FilterListener`, etc.) self-selects its
- * tokens from that batch and delegates to the matching `Contracts\Applier` -
- * see `applyPendings()`. `cast=` applies the same way the other 5 do - via
- * `Casting::apply()`, whose listener registers a `Builder::afterQuery()`
+ * hands the whole batch to `Pipeline::pending()`. Each DSL type's own step
+ * (`Listeners\FilterListener`, etc.) self-selects its tokens from that batch
+ * and delegates to the matching `Contracts\Applier` - see `applyPendings()`.
+ * `cast=` applies the same way the other 5 do - via `Casting::apply()`,
+ * whose step registers a `Builder::afterQuery()`
  * callback instead of an immediate SQL mutation, since `get()`, `first()`,
  * `find()`, `findMany()`, `sole()`, `paginate()`, and `cursor()` all funnel
  * through `Builder::get()` internally, which runs `afterQuery()` callbacks
@@ -155,10 +155,10 @@ class Curio
     }
 
     /**
-     * Dispatches one `ApplyPending` event carrying every token queued since
-     * the last dispatch, then clears the queue. A no-op when nothing is
-     * queued, so every `__call()`/`get()`/`paginate()` invocation can call
-     * this unconditionally.
+     * Runs every token queued since the last run through `Pipeline`, then
+     * clears the queue. A no-op when nothing is queued, so every
+     * `__call()`/`get()`/`paginate()` invocation can call this
+     * unconditionally.
      */
     private function applyPendings(): void
     {
@@ -166,7 +166,7 @@ class Curio
             return;
         }
 
-        event(new ApplyPending($this->pending, $this->builder, $this->query ?? $this->wrapModelAsQuery()));
+        app(Pipeline::class)->pending(new ApplyPending($this->pending, $this->builder, $this->query ?? $this->wrapModelAsQuery()));
 
         $this->pending = [];
     }

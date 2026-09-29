@@ -7,9 +7,9 @@ namespace Dex\Laravel\Curio\Listeners;
 use Dex\Laravel\Curio\Events\ApplyPending;
 
 /**
- * Registered first for `ApplyPending` in `CurioServiceProvider::boot()`, so
+ * The first step `Pipeline` runs for an `ApplyPending` batch, so
  * every filter/sort/select/aggregate/cast token has its `key` resolved
- * through `$query->replaceBy()` before any type-specific listener runs.
+ * through `$query->replaceBy()` before any type-specific step runs.
  *
  * `include` tokens are skipped: their `key` names a relation, not a field,
  * and a `replaceBy()` map entry meant for a `sort=`/`filter=` alias (e.g.

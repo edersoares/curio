@@ -13,9 +13,8 @@ use Dex\Laravel\Curio\Language\Aggregating;
  * all build `"<expr> as \"<alias>\""`) - register each one as sortable too,
  * so `sort=<alias>` validates without needing a separate `sortBy()` entry,
  * mirroring how `Including::apply()` does the same for relation-aggregate
- * include aliases. Registered before `SortListener` in
- * `CurioServiceProvider::boot()`, since `SortListener`'s validation reads
- * the `allowSort()` mutation this makes.
+ * include aliases. Runs before `SortListener` in `Pipeline`, since
+ * `SortListener`'s validation reads the `allowSort()` mutation this makes.
  */
 class AllowSortAggregates
 {

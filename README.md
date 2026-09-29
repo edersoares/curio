@@ -447,7 +447,7 @@ Add your own `config/curio.php` with only the keys you want to change — the pa
 
 ## Extending Curio
 
-Every fluent DSL call (`filter()`, `sort()`, `select()`, `aggregate()`, `include()`, `cast()` — whether from `Model::curio()` or through the HTTP pipeline) parses its argument immediately and queues the result; nothing touches the query builder until a terminal call (`get()`, `paginate()`, `first()`, ...) actually runs. At that point, one `Dex\Laravel\Curio\Events\ApplyPending` event is dispatched carrying every queued token, and a set of listeners registered in `CurioServiceProvider::boot()` each pick out the tokens they care about and apply them — one listener per DSL type, plus a couple of cross-cutting ones (field-alias resolution, and registering relation-aggregate/include aliases as sortable). It's a normal Laravel event, so you can hook your own listener onto it — for auditing, metrics, or reacting to a request's shape before/after Curio's own listeners run:
+Every fluent DSL call (`filter()`, `sort()`, `select()`, `aggregate()`, `include()`, `cast()` — whether from `Model::curio()` or through the HTTP pipeline) parses its argument immediately and queues the result; nothing touches the query builder until a terminal call (`get()`, `paginate()`, `first()`, ...) actually runs. At that point the whole batch goes through `Dex\Laravel\Curio\Pipeline`, which first dispatches one `Dex\Laravel\Curio\Events\ApplyPending` event carrying every queued token, and then runs its own steps in a fixed order — field-alias resolution, one step per DSL type, and registering relation-aggregate/include aliases as sortable. It's a normal Laravel event, so you can hook your own listener onto it — for auditing, metrics, or rewriting a request before it is applied:
 
 ```php
 use Dex\Laravel\Curio\Events\ApplyPending;
@@ -461,7 +461,7 @@ Event::listen(ApplyPending::class, function (ApplyPending $event) {
 });
 ```
 
-Listener order matters if you intend to inspect the *final* state of a request — register your listener after `CurioServiceProvider`'s own boot() runs (the default for any listener registered from your own app's service providers) to see tokens after Curio's built-in listeners (including alias resolution) have already run.
+The event is a hook, not the mechanism: Curio's own steps are called directly, never through the dispatcher. Your listener runs *before* them, so it sees the tokens as they were parsed (aliases from `replaceBy()` not yet resolved) and may rewrite `$event->tokens` — whatever it leaves there is still validated against the allow-lists before it reaches the query. What a listener can't do is switch the pipeline off: filters, validation and `defaultFilter()` are applied even under `Event::fake()`, or when a listener returns `false`.
 
 ## Testing
 
