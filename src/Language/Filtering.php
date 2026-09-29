@@ -39,13 +39,125 @@ class Filtering implements Applier
      */
     public function apply(Builder|Relation $builder, array $tokens, PaginateQuery $query): void
     {
-        $filters = $this->build($tokens);
+        $filters = $this->coerce($this->build($tokens), $query);
 
         if ($errors = $this->validate($filters, $query)) {
             throw ValidationException::withMessages($errors);
         }
 
         $this->applyClauses($filters, $builder);
+    }
+
+    /**
+     * Rules that declare a field as text, and rules that declare it as a
+     * number - what `coerce()` reads to decide which way a value goes.
+     */
+    private const array STRING_RULES = ['string'];
+
+    private const array NUMERIC_RULES = ['integer', 'numeric', 'decimal'];
+
+    /**
+     * The value grammar guesses a type from how a value *looks* (`123` is a
+     * number, `true` a boolean), which is right for a field with no declared
+     * type and wrong for one that has it: `name:123` reached validation as an
+     * integer and failed a `string` rule, so a text column could never be
+     * filtered by anything number-shaped - and quoting it didn't help. The
+     * field's own `filterBy()` rules settle it instead:
+     *
+     * - a `string` field always gets a string (`123` -> `'123'`, `true` -> `'true'`);
+     * - an `integer`/`numeric`/`decimal` field gets a number for any numeric
+     *   string, canonical or not (`007` -> `7`);
+     * - a field that declares neither keeps whatever the grammar guessed.
+     *
+     * `null` is left alone in every case - it is the `IS NULL` keyword, not a
+     * value - and so is a field the allow-list doesn't know, which
+     * `validate()` rejects right after.
+     *
+     * @param array<int, FilterClause> $filters
+     *
+     * @return array<int, FilterClause>
+     */
+    public function coerce(array $filters, PaginateQuery $query): array
+    {
+        return array_map(function (array $filter) use ($query) {
+            $rules = $this->rulesFor($filter['key'], $query);
+
+            if ($rules !== []) {
+                $filter['value'] = $this->coerceValue($filter['value'], $rules);
+            }
+
+            return $filter;
+        }, $filters);
+    }
+
+    /**
+     * The rule names (parameters stripped, `decimal:2` -> `decimal`) declared
+     * for a field - following a dotted key through `includeBy()` to the
+     * related query that owns the leaf field, the same walk
+     * `collectRelationFilterErrors()` does.
+     *
+     * @return array<int, string>
+     */
+    private function rulesFor(string $key, PaginateQuery $query): array
+    {
+        $segments = explode('.', $key);
+        $field = array_pop($segments);
+
+        $owner = $this->resolveRelationQuery($segments, $query);
+
+        $rules = $owner?->filterBy()[$field] ?? [];
+
+        if (is_string($rules)) {
+            $rules = explode('|', $rules);
+        }
+
+        return array_map(
+            fn (string $rule) => explode(':', $rule, 2)[0],
+            array_values(array_filter($rules, is_string(...))),
+        );
+    }
+
+    /**
+     * @param array<int, string> $relations
+     */
+    private function resolveRelationQuery(array $relations, PaginateQuery $query): ?PaginateQuery
+    {
+        foreach ($relations as $relation) {
+            $queryClass = $query->includeBy()[$relation] ?? null;
+
+            if ($queryClass === null) {
+                return null;
+            }
+
+            $query = app($queryClass);
+            assert($query instanceof PaginateQuery);
+        }
+
+        return $query;
+    }
+
+    /**
+     * @param array<int, string> $rules
+     */
+    private function coerceValue(mixed $value, array $rules): mixed
+    {
+        if (is_array($value)) {
+            return array_map(fn (mixed $item) => $this->coerceValue($item, $rules), $value);
+        }
+
+        if (array_intersect(self::STRING_RULES, $rules) !== []) {
+            return match (true) {
+                is_bool($value) => $value ? 'true' : 'false',
+                is_int($value), is_float($value) => (string) $value,
+                default => $value,
+            };
+        }
+
+        if (array_intersect(self::NUMERIC_RULES, $rules) !== [] && is_string($value) && is_numeric($value)) {
+            return $value + 0;
+        }
+
+        return $value;
     }
 
     /**
@@ -155,18 +267,10 @@ class Filtering implements Applier
     {
         $segments = explode('.', $filter['key']);
         $leafField = array_pop($segments);
-        $current = $query;
+        $current = $this->resolveRelationQuery($segments, $query);
 
-        foreach ($segments as $segment) {
-            $includeBy = $current->includeBy();
-            $queryClass = $includeBy[$segment] ?? null;
-
-            if ($queryClass === null) {
-                return [$filter['key'] => ["The field '{$filter['key']}' is not allowed on query filter."]];
-            }
-
-            $current = app($queryClass);
-            assert($current instanceof PaginateQuery);
+        if ($current === null) {
+            return [$filter['key'] => ["The field '{$filter['key']}' is not allowed on query filter."]];
         }
 
         return $this->collectFlatFilterErrors(

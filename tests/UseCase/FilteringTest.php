@@ -308,3 +308,76 @@ describe('validation errors', function () {
         ->expect(fn () => Author::curio()->filter('ranking:notAnInteger ranking:5')->toRawSql())
         ->throws(ValidationException::class);
 });
+
+/**
+ * The value grammar guesses a type from how a value looks; the field's own
+ * `filterBy()` rules have the final say. Before this, `name:123` reached
+ * validation as an integer and failed the `string` rule, so a text column
+ * (a document number, a postal code, an order code) could never be filtered
+ * by anything number-shaped, quoted or not.
+ */
+describe('value coercion follows the field rules', function () {
+    test('a `string` field receives a number-shaped value as a string')
+        ->expect(fn () => Author::curio()->filter('name:123'))
+        ->toRunQuery('select * from "author" where "author"."name" = \'123\'');
+
+    test('a `string` field keeps leading zeros')
+        ->expect(fn () => Author::curio()->filter('name:00123'))
+        ->toRunQuery('select * from "author" where "author"."name" = \'00123\'');
+
+    test('a `string` field keeps a quoted number-shaped value')
+        ->expect(fn () => Author::curio()->filter('name:"00123"'))
+        ->toRunQuery('select * from "author" where "author"."name" = \'00123\'');
+
+    test('a `string` field keeps digits too long for an integer')
+        ->expect(fn () => Author::curio()->filter('name:12345678901234567890'))
+        ->toRunQuery('select * from "author" where "author"."name" = \'12345678901234567890\'');
+
+    test('a `string` field receives `true` as text')
+        ->expect(fn () => Author::curio()->filter('name:true'))
+        ->toRunQuery('select * from "author" where "author"."name" = \'true\'');
+
+    test('a `string` field receives every item of a list as a string')
+        ->expect(fn () => Author::curio()->filter('name:007,8,ada'))
+        ->toRunQuery('select * from "author" where "author"."name" in (\'007\', \'8\', \'ada\')');
+
+    test('a `string` field receives both ends of a range as strings')
+        ->expect(fn () => Author::curio()->filter('name:001..100'))
+        ->toRunQuery('select * from "author" where "author"."name" between \'001\' and \'100\'');
+
+    test('a `string` field still reads `null` as the IS NULL keyword')
+        ->expect(fn () => Author::curio()->filter('name:null'))
+        ->toRunQuery('select * from "author" where "author"."name" is null');
+
+    test('an `integer` field receives a non-canonical number as a number')
+        ->expect(fn () => Author::curio()->filter('ranking:007'))
+        ->toRunQuery('select * from "author" where "author"."ranking" = 7');
+
+    test('an `integer` field still rejects a value that is not a number')
+        ->expect(fn () => Author::curio()->filter('ranking:abc')->toRawSql())
+        ->throws(ValidationException::class, 'The ranking field must be an integer.');
+
+    test('a field with no declared type keeps a canonical number as a number')
+        ->expect(fn () => Author::curio()->filter('additional:5'))
+        ->toRunQuery('select * from "author" where "author"."additional" = 5');
+
+    test('a field with no declared type keeps a non-canonical number as written')
+        ->expect(fn () => Author::curio()->filter('additional:005'))
+        ->toRunQuery('select * from "author" where "author"."additional" = \'005\'');
+
+    test('a relation field is coerced by the related query rules')
+        ->expect(fn () => Author::curio()->filter('posts.title:00123'))
+        ->toRunQuery('select * from "author" where exists (select * from "post" where "author"."id" = "post"."author_id" and "post"."title" = \'00123\')');
+
+    test('the HTTP path accepts a number-shaped value on a `string` field', function () {
+        Author::factory()->create(['name' => '00123']);
+        Author::factory()->create(['name' => '123']);
+
+        $response = $this->getJson('api/author?' . http_build_query(['filter' => 'name:00123']));
+
+        $response->assertOk();
+
+        expect($response->json('data'))->toHaveCount(1);
+        expect($response->json('data.0.name'))->toBe('00123');
+    });
+});

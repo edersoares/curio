@@ -252,7 +252,14 @@ trait NormalizesFilterClauses
             return false;
         }
 
-        if (is_numeric($value)) {
+        // Only a number written in its canonical form becomes one: `00123`,
+        // `1e3`, `1.0`, or a digit string too long for an integer would not
+        // survive the round trip, and whatever they lose (leading zeros, the
+        // exact digits) is the very thing a document number, a postal code
+        // or an order code is made of. Those stay strings here;
+        // `Filtering::coerce()` still turns them into numbers for a field
+        // whose own rules say it holds one.
+        if (is_numeric($value) && (string) ($value + 0) === $value) {
             return $value + 0;
         }
 
