@@ -19,20 +19,7 @@ composer test
 
 The `workbench/` directory is a runnable [Orchestra Testbench](https://packages.tools/testbench) application (`Author`, `Post`, `Comment` and `User` models with matching queries, requests, controllers and resources). The whole suite runs against it, and it's the fastest way to see the feature set wired together end to end.
 
-By default the suite runs on SQLite. To run it against PostgreSQL — required if you're touching the `trgm`/`unaccent` search modes or `sort=field:@unaccent` — create a `testbench.yaml` at the repository root (it's git-ignored):
-
-```yaml
-env:
-  STUDIO_WORKBENCH_NAMESPACE: Dex\Laravel\Curio\Workbench
-  DB_CONNECTION: pgsql
-  DB_URL: pgsql://postgres:postgres@localhost:5432/curio
-
-providers:
-  - Dex\Laravel\Curio\Workbench\App\Providers\WorkbenchServiceProvider
-
-seeders:
-  - Dex\Laravel\Curio\Workbench\Database\Seeders\DatabaseSeeder
-```
+The suite always runs on an in-memory SQLite database — `tests/TestCase.php` selects it, so there is nothing to configure and a `testbench.yaml` has no effect on it. The PostgreSQL-only features (the `trgm`/`unaccent` search modes, `sort=field:@unaccent`) are covered by asserting the SQL they generate, which proves what Curio builds but not that PostgreSQL accepts it: if you touch any of them, run the generated query against a real PostgreSQL server before opening the pull request.
 
 ## Before opening a pull request
 
@@ -42,7 +29,7 @@ composer analyse  # PHPStan, level max, must stay at zero errors
 composer format   # Laravel Pint (PSR-12)
 ```
 
-All three are enforced in CI. Pint also runs automatically on push and commits its own fixes, so don't worry if you forget it.
+The tests and PHPStan run in CI on every push. Pint runs there too, on every branch except `main`, and commits its own fixes to your branch — so don't worry if you forget it, but pull before pushing again.
 
 For a bug fix, include a failing test that demonstrates the bug. Tests mirror the source: `tests/UseCase/*Test.php` covers each `Language` parser/validator individually, and `tests/Extensions/PaginatorTest.php` covers the end-to-end HTTP pipeline.
 

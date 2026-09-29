@@ -22,7 +22,7 @@ GET /api/posts?filter=title:*laravel* published_at:>=2025-01-01&sort=-published_
 composer require dex/curio
 ```
 
-The package auto-registers `Dex\Laravel\Curio\Providers\CurioServiceProvider`. No further setup is required — sensible defaults are merged from `config/curio.php`. To override any default, add your own `config/curio.php` in the app with just the keys you want to change (see [Configuration](#configuration)).
+The package auto-registers `Dex\Laravel\Curio\Providers\CurioServiceProvider`. No further setup is required — sensible defaults are merged from `config/curio.php`. To override any default, add your own `config/curio.php` in the app with just the sections you want to change (see [Configuration](#configuration)).
 
 ## Quick start
 
@@ -81,7 +81,7 @@ class PostPaginateRequest extends FormRequest
 }
 ```
 
-The `PaginateRequest` trait generates the request's validation `rules()` from `PostQuery` automatically (allowed filter fields, sort fields, include relations, aggregate fields, `page`, `size`), and exposes `paginate(Builder $builder)`.
+The `PaginateRequest` trait generates the request's validation `rules()` from `PostQuery` automatically (allowed filter fields, sort fields, include relations, aggregate fields, cast fields, `page`, `size`), and exposes `paginate(Builder $builder)`.
 
 Override `additionalRules(): array` on the request to merge in extra validation rules (e.g. for other, non-`curio` inputs on the same endpoint) alongside the generated ones.
 
@@ -103,7 +103,7 @@ class PostPaginateController
 Route::get('posts', PostPaginateController::class);
 ```
 
-That's it — `filter`, `sort`, `include`, `select`, `aggregate`, `page` and `size` query parameters are now all parsed, validated and applied for you, and the result is a standard `LengthAwarePaginator`.
+That's it — `filter`, `sort`, `include`, `select`, `aggregate`, `cast`, `page` and `size` query parameters are now all parsed, validated and applied for you, and the result is a standard `LengthAwarePaginator`.
 
 ## Query string reference
 
@@ -130,16 +130,18 @@ Only fields declared in `filterBy()` (or a valid dotted relation declared in `in
 | `has:relation:@count(>=3)`  | `whereHas` with an operator and count (also `>`, `<=`, `<`, `=`)                                                                                                              |
 | `-has:relation:@count(>=3)` | Negates the count comparison itself (`>=` ↔ `<`, `>` ↔ `<=`) rather than wrapping it in `NOT` — `WHERE (SELECT COUNT(*) ...) < 3`                                            |
 | `relation.field:value`      | Filters through `whereHas` on relation (nested relations supported: `relation.nested.field:value`)                                                                            |
-| `field->path:value`         | `WHERE json_extract(field, '$.path') = value` — JSON path filter, nested paths supported (`field->a->b:value`)                                                                |
+| `field->path:value`         | `WHERE json_extract(field, '$.path') = value` — JSON path filter, nested paths supported (`field->a->b:value`); every path is a field of its own in `filterBy()`              |
 | `field:{"a":1}`             | `whereJsonContains(field, ['a' => 1])` — JSON containment on the whole column (also accepts a JSON array); a value that isn't valid JSON is treated as a plain string instead |
 | `-field:{"a":1}`            | `whereJsonDoesntContain(field, ['a' => 1])`                                                                                                                                   |
 | `@preset-name`              | Expands a registered filter preset                                                                                                                                            |
 | free text (`laravel php`)   | Fanned out across `searchBy()` fields — see [Search (free text)](#search-free-text)                                                                                          |
-| `field:"a value"`           | Quote a value that contains spaces or commas                                                                                                                                  |
+| `field:"a value"`           | Quote a value that contains spaces                                                                                                                                            |
 
 Multiple clauses are space-separated: `filter=title:*laravel* -author_id:1,2 published_at:>=2025-01-01`.
 
-Values are coerced to the type the field declares in `filterBy()`: a `string` field always receives a string (`name:00123` and `name:true` match the text `00123` and `true`), and an `integer`/`numeric`/`decimal` field receives a number for any numeric string (`ranking:007` is `7`). A field that declares neither gets a best guess from how the value is written — `true`/`false` become booleans, and a number in its canonical form becomes an `int`/`float`, while `00123` or `1e3` stay strings. `null` always means `NULL`, whatever the field's type. Comma-separated lists (`field:a,b`) become an `IN` clause; each item can itself be quoted (`field:"a b",c`).
+Values are coerced to the type the field declares in `filterBy()`: a `string` field always receives a string (`name:00123` and `name:true` match the text `00123` and `true`), and an `integer`/`numeric`/`decimal` field receives a number for any numeric string (`ranking:007` is `7`). A field that declares neither gets a best guess from how the value is written — `true`/`false` become booleans, and a number in its canonical form becomes an `int`/`float`, while `00123` or `1e3` stay strings. `null` always means `NULL`, whatever the field's type. Comma-separated lists (`field:a,b`) become an `IN` clause; each item can itself be quoted (`field:"a b",c`). Quotes protect spaces, not commas: a comma always separates list items, so a single value that contains one (`field:"a,b"`) can't be expressed and fails validation.
+
+A JSON path has to be declared in `filterBy()` exactly as it is sent — `'payload->user' => ['integer']` allows `payload->user:1` and nothing else under `payload`. Declaring the column alone (`'payload'`) allows containment (`payload:{"a":1}`), not paths into it.
 
 #### Presets
 
@@ -157,7 +159,7 @@ Preset::register('year', fn (string $year) => "created_at:{$year}-01-01..{$year}
 GET /api/authors?filter=@vip @year:2025
 ```
 
-Register several at once with `Preset::registerMany(['active' => 'status:active', 'vip' => '@active plan:premium'])`. Referencing a preset that doesn't exist leaves the `@name` token untouched (no error); a preset that references itself, directly or through another preset, throws an `InvalidArgumentException` when it's registered — closure-based presets are exempt from that check, which is exactly how the package's own built-in `count` preset (see [Aggregating](#aggregating-aggregate)) safely re-emits `@count`-shaped output without tripping the cycle detector. `Preset::clear()` resets your own registered presets but leaves the built-in `count` preset in place.
+Register several at once with `Preset::registerMany(['active' => 'status:active', 'vip' => '@active plan:premium'])`. Referencing a preset that doesn't exist leaves the `@name` token untouched (no error) — it is then read like any other token, which in `filter=` means free text; a preset that references itself, directly or through another preset, throws an `InvalidArgumentException` when it's registered — closure-based presets are exempt from that check, which is exactly how the package's own built-in `count` preset (see [Aggregating](#aggregating-aggregate)) safely re-emits `@count`-shaped output without tripping the cycle detector. `Preset::clear()` resets your own registered presets but leaves the built-in `count` preset in place.
 
 #### Variables
 
@@ -175,6 +177,8 @@ GET /api/posts?author_id=42          # defaultFilter() resolves to 'author_id:42
 GET /api/posts?filter=title:$term    # a client-supplied string can reference other input too
 ```
 
+A `$name` is client input: it is filled by whatever the request sent under that key and substituted before parsing, so its value is read as query syntax (`?author_id=42 status:draft` adds a clause of its own). It can add constraints, never pin one down — don't use a variable for a tenant id or the authenticated user; constrain the `Builder` you pass to `paginate()` instead. An optional `$name` that is absent leaves a key with no value (`title:`), which is read as free text rather than as a filter.
+
 This variable resolution is specific to the HTTP pipeline (`Extensions\Paginator`) — the fluent `Model::curio()`/`Curio` path (see [Fluent querying](#fluent-querying-without-a-paginatequery)) parses whatever string you pass it as-is, with no `$name` substitution.
 
 #### Search (free text)
@@ -184,11 +188,11 @@ Any token in `filter=` that isn't a valid `key:value` clause (a bare word, a quo
 ```php
 public function searchBy(): array
 {
-    return ['title', 'author.name'];
+    return ['title', 'content'];
 }
 ```
 
-`searchBy()` returning `[]` (the default) silently discards free text instead of erroring. Three matching modes, set via `searchMode()` (defaults to `config('curio.search.mode')`):
+`searchBy()` takes columns of the model's own table — a relation column (`author.name`) is not joined in and fails at the database. `searchBy()` returning `[]` (the default) silently discards free text instead of erroring. Three matching modes, set via `searchMode()` (defaults to `config('curio.search.mode')`):
 
 | Mode | SQL | Notes |
 |------|-----|-------|
@@ -229,11 +233,13 @@ The `expr` inside `@filter(...)` / `@only(...)` is a normal filter string, valid
 
 `@sum`/`@avg`/`@min`/`@max` always require a column argument (`@sum(column)`). `@count` takes no argument (`COUNT(*)`) or `distinct:column` (`COUNT(DISTINCT column)`); `distinct` is not supported on the other aggregators.
 
-`@limit(n)` is only supported on relations that return multiple rows per parent (`HasMany`, `HasManyThrough`, `MorphMany`, `BelongsToMany`, `MorphToMany`, and their singular `HasOne`/`HasOneThrough`/`MorphOne` counterparts) — using it on a `BelongsTo`/`MorphTo` relation throws a validation error, since those return a single related row per parent and limiting would apply a single global limit across all parents' results instead. `@limit(n)` does not itself guarantee row order — pair it with a relation that defines its own ordering (e.g. `Author::latestPost()` uses `->hasOne(Post::class, 'author_id')->latest()`) if you need deterministic "first N" / "latest N" semantics. `@limit(...)` must come after `@filter(...)`/`@only(...)`, not before.
+`@limit(n)` is only supported on relations that return multiple rows per parent (`HasMany`, `HasManyThrough`, `MorphMany`, `BelongsToMany`, `MorphToMany`, and their singular `HasOne`/`HasOneThrough`/`MorphOne` counterparts) — using it on a `BelongsTo`/`MorphTo` relation throws a validation error, since those return a single related row per parent and limiting would apply a single global limit across all parents' results instead. `@limit(n)` does not itself guarantee row order — pair it with a relation that defines its own ordering (e.g. `Author::latestPost()` uses `->hasOne(Post::class, 'author_id')->latest()`) if you need deterministic "first N" / "latest N" semantics. `@limit(...)` must come after `@filter(...)`/`@only(...)`, not before — in the other order (`relation:@limit(2):@filter(expr)`) nothing is rejected, but both modifiers are ignored and the relation is eager loaded whole.
+
+An `include=` item may go through at most `maxIncludeDepth()` relations (`posts.comments.author` is 3, the default from `config('curio.include.max_depth')`); a deeper chain fails validation.
 
 ### Selecting (`select`)
 
-Space-separated column list, restricting the returned columns: `select=id title published_at`. A relation-scoped field (`author.name`) is validated against `selectBy()` like any other field, but on its own it doesn't add a column to the query or eager-load the relation — pair it with `include=author` if you actually want that relation loaded.
+Space-separated column list, restricting the returned columns: `select=id title published_at`. A relation-scoped field (`author.name`) is validated against `selectBy()` like any other field, but on its own it doesn't add a column to the query or eager-load the relation (sent alone, the query selects every column) — pair it with `include=author` if you actually want that relation loaded.
 
 Columns also support a date-part transform:
 
@@ -241,6 +247,8 @@ Columns also support a date-part transform:
 |-----------------------------------------------------------------------|-------------------------------------------------------------------------|
 | `field:@month` / `@year` / `@day` / `@hour` / `@minute` / `@second`   | Extracts a date part (portable across MySQL, PostgreSQL and SQLite) |
 | `field:@month:@alias(name)`                                           | Aliases the resulting column (defaults to the field name itself)     |
+
+Give a date part an `@alias` when the field has a date cast on the model (`created_at`, `updated_at`, anything in `casts()`). The default alias is the field's own name, so the model casts the extracted number back into a date: `created_at:@year` comes out of the database as `2026` and out of `$model->toArray()` as `1970-01-01T00:33:46Z`. `created_at:@year:@alias(year)` avoids it.
 
 Aggregation (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`, grouping, `HAVING`) is a separate, mutually exclusive parameter — see below.
 
@@ -270,13 +278,13 @@ Every item must carry one role token — a bare field with no `@` token is inval
 
 `expr` inside `@having(...)` uses the same value grammar as `filter` (`>=100`, `10..20` as `BETWEEN`, `10,20,30` as `IN`, `*text*` as `LIKE`, `null`/`filled`) and a leading `-` for negation (there's no key here to prefix, so the `-` goes on the expression itself: `@having(-10..20)` is `NOT BETWEEN`). It's applied directly against that one aggregate expression — no alias lookup involved, unlike a top-level `filter=`.
 
-Fields referenced in `aggregate` (both `@group` targets and aggregate source columns) are validated against `aggregateBy()`; `*` is exempt.
+Fields referenced in `aggregate` (both `@group` targets and aggregate source columns) are validated against `aggregateBy()`; `*` is exempt. A date part defaults its alias to the field's own name, which a model with a date cast on that field turns back into a date — alias it (`created_at:@year:@group:@alias(year)`), as described under [Selecting](#selecting-select).
 
 ```
-GET /api/user?aggregate=name:@group @count:@alias(total):@having(>=2)&filter=name:*fernando*
+GET /api/author?aggregate=name:@group @count:@alias(total):@having(>=2)&filter=name:*fernando*
 ```
 
-becomes roughly `SELECT name, COUNT(*) AS total FROM user GROUP BY name HAVING COUNT(*) >= 2` (`filter=name:*fernando*` still applies as a plain `WHERE`, evaluated before grouping).
+becomes roughly `SELECT name, COUNT(*) AS total FROM author GROUP BY name HAVING COUNT(*) >= 2` (`filter=name:*fernando*` still applies as a plain `WHERE`, evaluated before grouping).
 
 ### Casting (`cast`)
 
@@ -335,7 +343,9 @@ Subclass `Dex\Laravel\Curio\Query\PaginateQuery` and override what you need — 
 | `searchBy()`                                                                                                          | `['field', ...]`                          | Fields free text is matched against — see [Search (free text)](#search-free-text)                                              |
 | `searchMode()` / `searchSimilarityThreshold()`                                                                        | `string` / `float`                        | `like`/`trgm`/`unaccent` and the `trgm` similarity threshold, backed by `config('curio.search.*')`                             |
 | `sortBy()`                                                                                                            | `['field', ...]`                          | Allowed sort fields                                                                                                            |
+| `allowSort(string ...$columns)` | `static` | Adds sortable fields to one instance, on top of `sortBy()` — for a query built per request (`getPaginateQuery()` may return an instance instead of a class name) |
 | `includeBy()`                                                                                                         | `['relation' => QueryClass::class]`       | Allowed eager-loads, each linked to its own `PaginateQuery`                                                                    |
+| `maxIncludeDepth()` | `int` | Maximum relation nesting depth of one `include=` item, backed by `config('curio.include.max_depth')` |
 | `selectBy()`                                                                                                          | `['field', ...]`                          | Allowed select fields                                                                                                          |
 | `aggregateBy()`                                                                                                       | `['field', ...]`                          | Allowed fields referenceable inside `aggregate` (both `@group` targets and aggregate source columns)                           |
 | `castBy()` / `castMutator()`                                                                                          | `['field', ...]` / `['castName' => resolver]` | Allowed cast fields and the named resolvers available to `cast=` — see [Casting](#casting-cast)                           |
@@ -443,7 +453,9 @@ return [
 ];
 ```
 
-Add your own `config/curio.php` with only the keys you want to change — the package's defaults are merged in for the rest.
+Add your own `config/curio.php` with only the sections you want to change — the package's defaults are merged in for the rest.
+
+Defaults are merged one level deep: a top-level section you define (`query`, `paginate`, `include`, `search`) **replaces** the package's section, it isn't merged key by key. Copy the whole section you are changing — a `paginate` section holding only `default_page_size` leaves the other two keys undefined, and every request fails. `search` is the exception: its two keys fall back to their defaults (`like`, `0.3`) when absent.
 
 ## Extending Curio
 
