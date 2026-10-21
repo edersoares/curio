@@ -36,7 +36,7 @@ class Paginator
     {
         $filter = $this->resolveParam('filter', $query->defaultFilter(), $context);
         $include = $this->resolveParam('include', $query->defaultInclude(), $context);
-        $sort = $this->resolveParam('sort', $context->has('aggregate') ? '' : $query->defaultSort(), $context);
+        $sort = $this->resolveParam('sort', $context->has($this->configKey('aggregate')) ? '' : $query->defaultSort(), $context);
         $aggregate = $this->resolveParam('aggregate', $query->defaultAggregate(), $context);
         $select = $this->resolveParam('select', $query->defaultSelect(), $context);
         $cast = $this->resolveParam('cast', $query->defaultCast(), $context);

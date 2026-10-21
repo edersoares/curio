@@ -80,3 +80,25 @@ test('context with extra params does not affect non-variable text', function () 
 
     expect($result)->toBe('age:18');
 });
+
+test('an integer from a JSON body is substituted', function () {
+    $result = $this->resolver->resolve('author_id:$author_id!', collect(['author_id' => 42]));
+
+    expect($result)->toBe('author_id:42');
+});
+
+test('a float and a boolean are substituted', function () {
+    $result = $this->resolver->resolve('ranking:$ranking active:$active', collect(['ranking' => 7.5, 'active' => false]));
+
+    expect($result)->toBe('ranking:7.5 active:false');
+});
+
+test('a required variable sent as an array counts as absent', function () {
+    expect(fn () => $this->resolver->resolve('year:$year!', collect(['year' => ['2026']])))
+        ->toThrow(ValidationException::class);
+});
+
+test('a required variable sent as null counts as absent', function () {
+    expect(fn () => $this->resolver->resolve('year:$year!', collect(['year' => null])))
+        ->toThrow(ValidationException::class);
+});

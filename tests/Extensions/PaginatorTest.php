@@ -8,6 +8,8 @@ use Dex\Laravel\Curio\Workbench\App\Http\Queries\AuthorQuery;
 use Dex\Laravel\Curio\Workbench\App\Models\Author;
 use Dex\Laravel\Curio\Workbench\App\Models\Post;
 use Dex\Laravel\Curio\Workbench\Database\Seeders\DatabaseSeeder;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 
 beforeEach(function () {
     Preset::clear();
@@ -314,4 +316,23 @@ test('the page size is floored at 1', function () {
     );
 
     expect($paginator->perPage())->toBe(1);
+});
+
+test('a renamed aggregate parameter still turns the default sort off', function () {
+    config()->set('curio.query.aggregate', 'agg');
+
+    Author::factory()->count(2)->create(['ranking' => 10]);
+
+    $queries = [];
+
+    DB::listen(function (QueryExecuted $event) use (&$queries) {
+        $queries[] = $event->toRawSql();
+    });
+
+    $this->getJson('api/author?' . http_build_query(['agg' => 'ranking:@group @count:@alias(total)']))->assertOk();
+
+    $grouped = collect($queries)->filter(fn (string $sql) => str_contains($sql, 'group by'));
+
+    expect($grouped)->not->toBeEmpty();
+    expect($grouped->implode("\n"))->not->toContain('order by');
 });
