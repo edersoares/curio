@@ -21,12 +21,11 @@ describe('include', function () {
         ->toRunQuery('select * from "post" where "post"."author_id" in (?)')
         ->toRunQuery('select * from "comment" where "comment"."post_id" in (?)');
 
-    // TODO: not allowed
-    test('`-relation` / eager load')
-        ->defer(fn () => Post::factory()->create())
-        ->expect(fn () => Author::curio()->include('-posts'))
-        ->toRunQuery('select * from "author"')
-        ->toRunQuery('select * from "post" where "post"."author_id" in (?)');
+    test('`relation:@limit(n):@filter(expr)` / modifiers in either order')
+        ->defer(fn () => Post::factory()->create(['status' => 'draft']))
+        ->expect(fn () => Author::curio()->include('posts:@limit(3):@filter(status:draft)'))
+        ->toRunQuery('select * from "author" where exists (select * from "post" where "author"."id" = "post"."author_id" and "post"."status" = \'draft\')')
+        ->toRunQuery('select * from (select *, row_number() over (partition by "post"."author_id") as "laravel_row" from "post" where "post"."author_id" in (1) and "post"."status" = \'draft\') as "laravel_table" where "laravel_row" <= 3 order by "laravel_row"');
 });
 
 describe('aggregates', function () {
@@ -107,11 +106,45 @@ describe('modifiers', function () {
 });
 
 describe('unexpected input', function () {
-    // TODO: alias is not applied, maybe convert to exception
-    test('`relation:@alias` / alias is not applied')
-        ->defer(fn () => Post::factory()->create())
-        ->expect(fn () => Author::curio()->include('posts:@alias'))
-        ->toRunQuery('select * from "author"');
+    test('`-relation` / a negated relation is rejected')
+        ->expect(fn () => Author::curio()->include('-posts')->get())
+        ->throws(ValidationException::class, "The include expression 'posts' is not valid: a relation can't be negated.");
+
+    test('`relation:@alias(name)` / an alias without an aggregate is rejected')
+        ->expect(fn () => Author::curio()->include('posts:@alias(x)')->get())
+        ->throws(ValidationException::class, "The include expression 'posts' is not valid: '@alias' is not allowed here.");
+
+    test('`relation:@bogus` / an unknown modifier is rejected')
+        ->expect(fn () => Author::curio()->include('posts:@bogus')->get())
+        ->throws(ValidationException::class, "The include expression 'posts' is not valid: '@bogus' is not allowed here.");
+
+    test('`relation:@filter(expr):@alias(name)` / a stray modifier next to a scope is rejected')
+        ->expect(fn () => Author::curio()->include('posts:@filter(status:draft):@alias(x)')->get())
+        ->throws(ValidationException::class, "The include expression 'posts' is not valid: '@alias' is not allowed here.");
+
+    test('`relation:@filter(a):@only(b)` / filter and only together are rejected')
+        ->expect(fn () => Author::curio()->include('posts:@filter(status:draft):@only(status:draft)')->get())
+        ->throws(ValidationException::class, "The include expression 'posts' is not valid: '@filter' and '@only' can't be combined.");
+
+    test('`relation:@filter()` / an empty scope is rejected')
+        ->expect(fn () => Author::curio()->include('posts:@filter()')->get())
+        ->throws(ValidationException::class, "The include expression 'posts' is not valid: '@filter' requires a filter expression.");
+
+    test('`relation:@limit(0)` / a zero limit is rejected')
+        ->expect(fn () => Author::curio()->include('posts:@limit(0)')->get())
+        ->throws(ValidationException::class, "The include expression 'posts' is not valid: '@limit' requires a positive integer.");
+
+    test('`relation:@limit` / a limit without a value is rejected')
+        ->expect(fn () => Author::curio()->include('posts:@limit')->get())
+        ->throws(ValidationException::class, "The include expression 'posts' is not valid: '@limit' requires a positive integer.");
+
+    test('`relation:@limit(n)` / a limit above the related query\'s max page size is rejected')
+        ->expect(fn () => Author::curio()->include('posts:@limit(251)')->get())
+        ->throws(ValidationException::class, "The '@limit' on 'posts' may not be greater than 250.");
+
+    test('`relation:@limit(n)` / a limit at the related query\'s max page size is accepted')
+        ->expect(fn () => Author::curio()->include('posts:@limit(250)')->get())
+        ->not->toThrow(ValidationException::class);
 
     test('`relation:@count:@alias` / a bare `@alias` with no value now throws')
         ->defer(fn () => Post::factory()->create())
@@ -142,9 +175,9 @@ describe('unexpected input', function () {
         ->expect(fn () => Author::curio()->include('nope')->get())
         ->throws(ValidationException::class, "The relation 'nope' is not allowed on query include");
 
-    test('`has:usage` / a stray filter-shaped token outside `filter=` falls back to a plain include and is still rejected')
+    test('`has:usage` / a value-shaped token outside `filter=` is rejected')
         ->expect(fn () => Author::curio()->include('has:usage')->get())
-        ->throws(ValidationException::class, "The relation 'has' is not allowed on query include");
+        ->throws(ValidationException::class, "The include expression 'has' is not valid: a relation takes modifiers (`:@name(...)`), not a value.");
 
     test('`posts.author.posts.author` / a chain deeper than maxIncludeDepth() is rejected')
         ->expect(fn () => Author::curio()->include('posts.author.posts.author')->get())

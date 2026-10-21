@@ -40,12 +40,14 @@ class Including implements Applier
 
     /**
      * Dispatches an already-tokenized `key`/`modifiers` pair to the matching
-     * item shape. Falls back to a literal relation name (`parsePlainInclude()`)
-     * for a negated key, a value-shaped token, a key outside `[\w.]+`, or a
-     * modifier chain whose first entry isn't a recognized role (an aggregate
-     * function, `@limit`, `@filter`, or `@only`) - matching `Eloquent::with()`'s
-     * own `relation:col1,col2` column-selection syntax for anything this
-     * grammar doesn't otherwise recognize.
+     * item shape: an aggregation (`relation:@count`, `@sum(column)`, ...) or
+     * an eager load, optionally scoped by one `@filter(...)` or `@only(...)`
+     * and/or limited by `@limit(n)`, in either order.
+     *
+     * Anything else - an unknown modifier, a negated relation, a value, or
+     * `@filter` together with `@only` - is a 422 rather than a plain eager
+     * load of the bare name, which would quietly drop what the client asked
+     * for.
      *
      * @param FilterClause $token
      *
@@ -55,8 +57,16 @@ class Including implements Applier
     {
         $relation = $token['key'];
 
-        if ($token['negated'] || $token['operator'] !== null || !preg_match('/^[\w.]+$/', $relation)) {
-            return $this->parsePlainInclude($relation);
+        if (!preg_match('/^[\w.]+$/', $relation)) {
+            throw $this->invalid($relation, 'a relation name may only contain letters, digits, `_` and `.`.');
+        }
+
+        if ($token['negated']) {
+            throw $this->invalid($relation, 'a relation can\'t be negated.');
+        }
+
+        if ($token['operator'] !== null) {
+            throw $this->invalid($relation, 'a relation takes modifiers (`:@name(...)`), not a value.');
         }
 
         $modifiers = $token['modifiers'];
@@ -66,15 +76,71 @@ class Including implements Applier
             return $this->parseAggregationInclude($relation, $first, $modifiers);
         }
 
-        if ($first === 'limit' && count($modifiers) === 1 && preg_match('/^\d+$/', $modifiers['limit'][0] ?? '')) {
-            return ['relation' => $relation, 'filter' => null, 'mode' => null, 'limit' => (int) $modifiers['limit'][0]];
+        return $this->parseEagerLoadInclude($relation, $modifiers);
+    }
+
+    /**
+     * @param array<string, list<string>> $modifiers
+     *
+     * @return IncludeOtherItem
+     */
+    private function parseEagerLoadInclude(string $relation, array $modifiers): array
+    {
+        $mode = null;
+        $filter = null;
+        $limit = null;
+
+        foreach ($modifiers as $modifier => $values) {
+            $value = $values[0] ?? null;
+
+            match ($modifier) {
+                'filter', 'only' => [$mode, $filter] = $this->requireScope($relation, $mode, $modifier, $value),
+                'limit' => $limit = $this->requireLimit($relation, $value),
+                default => throw $this->invalid($relation, "'@{$modifier}' is not allowed here."),
+            };
         }
 
-        if (($first === 'filter' || $first === 'only') && ($modifiers[$first][0] ?? '') !== '') {
-            return $this->parseFilterOrOnlyInclude($relation, $first, $modifiers);
+        return [
+            'relation' => $relation,
+            'filter' => $filter,
+            'mode' => $mode,
+            'limit' => $limit,
+        ];
+    }
+
+    /**
+     * @param 'filter'|'only'|null $current
+     * @param 'filter'|'only' $modifier
+     *
+     * @return array{0: 'filter'|'only', 1: string}
+     */
+    private function requireScope(string $relation, ?string $current, string $modifier, ?string $value): array
+    {
+        if ($current !== null) {
+            throw $this->invalid($relation, "'@filter' and '@only' can't be combined.");
         }
 
-        return $this->parsePlainInclude($relation);
+        if ($value === null || trim($value) === '') {
+            throw $this->invalid($relation, "'@{$modifier}' requires a filter expression.");
+        }
+
+        return [$modifier, $value];
+    }
+
+    private function requireLimit(string $relation, ?string $value): int
+    {
+        if ($value === null || !preg_match('/^[1-9]\d{0,5}$/', $value)) {
+            throw $this->invalid($relation, "'@limit' requires a positive integer.");
+        }
+
+        return (int) $value;
+    }
+
+    private function invalid(string $relation, string $reason): ValidationException
+    {
+        return ValidationException::withMessages([
+            'include' => "The include expression '$relation' is not valid: $reason",
+        ]);
     }
 
     /**
@@ -177,44 +243,6 @@ class Including implements Applier
     }
 
     /**
-     * `$modifiers` may carry other keys besides `$mode`/`limit` (e.g.
-     * `posts:@filter(a):@alias(b)`) - those are silently ignored, same as
-     * before: only an exact `[$mode, 'limit']` pair (nothing else) combines
-     * with a limit.
-     *
-     * @param 'filter'|'only' $mode
-     * @param array<string, list<string>> $modifiers
-     *
-     * @return IncludeOtherItem
-     */
-    private function parseFilterOrOnlyInclude(string $relation, string $mode, array $modifiers): array
-    {
-        $limit = array_keys($modifiers) === [$mode, 'limit'] && preg_match('/^\d+$/', $modifiers['limit'][0] ?? '')
-            ? (int) $modifiers['limit'][0]
-            : null;
-
-        return [
-            'relation' => $relation,
-            'filter' => $modifiers[$mode][0],
-            'mode' => $mode,
-            'limit' => $limit,
-        ];
-    }
-
-    /**
-     * @return IncludeOtherItem
-     */
-    private function parsePlainInclude(string $include): array
-    {
-        return [
-            'relation' => $include,
-            'filter' => null,
-            'mode' => null,
-            'limit' => null,
-        ];
-    }
-
-    /**
      * @param Builder<Model> $builder
      * @param array<int, IncludeItem> $parsedItems
      */
@@ -240,7 +268,7 @@ class Including implements Applier
             $relationName = $parsed['relation'];
 
             if ($parsed['mode'] === 'filter') {
-                // $parsed['mode'] === 'filter' is only ever produced alongside a non-null 'filter' (see parseFilterOrOnlyInclude()); $relationQuery above is only guaranteed non-null when $query was given.
+                // $parsed['mode'] === 'filter' is only ever produced alongside a non-null 'filter' (see parseEagerLoadInclude()); $relationQuery above is only guaranteed non-null when $query was given.
                 assert($filter !== null);
 
                 $builder->whereHas($relationName, function (Builder $q) use ($filter, $relationQuery) {
@@ -451,14 +479,12 @@ class Including implements Applier
 
     /**
      * Every parsed item - plain, filtered, or aggregated - must name a
-     * relation reachable through `includeBy()`. Previously only filtered
-     * items (`:@filter`/`:@only`) were checked here, so a plain include
-     * naming anything outside the allowlist (e.g. a stray `has:usage`
-     * token that fails to parse as a recognized modifier and falls back to
-     * `parsePlainInclude()`) skipped this validation entirely and reached
-     * `Builder::with()` unchecked - which, for a name that collides with a
-     * builder/relation-forwarded method expecting arguments (`has`, ...),
-     * throws a raw `ArgumentCountError` instead of a 422.
+     * relation reachable through `includeBy()`; a name outside it never
+     * reaches `Builder::with()`, where one colliding with a forwarded
+     * builder method (`has`, ...) would throw a raw `ArgumentCountError`.
+     *
+     * `@limit(n)` is bounded by the related query's `defaultMaxPageSize()`,
+     * the same ceiling `size=` has on that relation's own endpoint.
      *
      * A relation is also rejected for nesting deeper than
      * `maxIncludeDepth()`: `includeBy()` can't bound a chain on its own,
@@ -484,8 +510,18 @@ class Including implements Applier
                 continue;
             }
 
-            if ($this->resolveQueryOrNull($parsed['relation'], $query) === null) {
+            $related = $this->resolveQueryOrNull($parsed['relation'], $query);
+
+            if ($related === null) {
                 $messages[] = "The relation '{$parsed['relation']}' is not allowed on query include.";
+
+                continue;
+            }
+
+            $limit = $parsed['mode'] === 'aggregation' ? null : $parsed['limit'];
+
+            if ($limit !== null && $limit > $related->defaultMaxPageSize()) {
+                $messages[] = "The '@limit' on '{$parsed['relation']}' may not be greater than {$related->defaultMaxPageSize()}.";
             }
         }
 

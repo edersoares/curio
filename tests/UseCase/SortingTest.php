@@ -64,6 +64,18 @@ describe('validation errors', function () {
         ->expect(fn () => Author::curio()->sort('nickname')->toRawSql())
         ->throws(ValidationException::class, "The fields 'nickname' is not allowed to sort.");
 
+    test('a value instead of a direction prefix is rejected')
+        ->expect(fn () => Author::curio()->sort('name:desc')->toRawSql())
+        ->throws(ValidationException::class, "The sort expression 'name' is not valid: use '-name' for descending, not a value.");
+
+    test('an unknown modifier is rejected')
+        ->expect(fn () => Author::curio()->sort('name:@bogus')->toRawSql())
+        ->throws(ValidationException::class, "The sort expression 'name' is not valid: '@bogus' is not allowed here.");
+
+    test('`@unaccent` with an argument is rejected')
+        ->expect(fn () => Author::curio()->sort('email:@unaccent(x)')->toRawSql())
+        ->throws(ValidationException::class, "The sort expression 'email' is not valid: '@unaccent' is not allowed here.");
+
     /**
      * An allowed dotted key still has to name a real relation: `Model::__call()`
      * forwards an unknown name to the query builder, so resolving the relation

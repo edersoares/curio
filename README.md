@@ -221,8 +221,8 @@ Space-separated relation list. Only relations declared in `includeBy()` (mapped 
 | `relation:@filter(expr)`           | Eager loads and constrains the parent query via `whereHas`     |
 | `relation:@only(expr)`             | Eager loads, filtering only the loaded relation rows           |
 | `relation:@limit(n)`               | Eager loads, limiting each parent to at most `n` related rows  |
-| `relation:@filter(expr):@limit(n)` | Combines `@filter` and `@limit` (in that order only)           |
-| `relation:@only(expr):@limit(n)`   | Combines `@only` and `@limit` (in that order only)             |
+| `relation:@filter(expr):@limit(n)` | Combines `@filter` and `@limit` (either order)                 |
+| `relation:@only(expr):@limit(n)`   | Combines `@only` and `@limit` (either order)                   |
 | `relation:@count`                  | `withCount('relation')`                                        |
 | `relation:@sum(column)`            | `withSum('relation', 'column')` (also `@avg`, `@min`, `@max`)  |
 | `relation:@count(distinct:column)` | `COUNT(DISTINCT column)` on the relation                       |
@@ -233,7 +233,9 @@ The `expr` inside `@filter(...)` / `@only(...)` is a normal filter string, valid
 
 `@sum`/`@avg`/`@min`/`@max` always require a column argument (`@sum(column)`). `@count` takes no argument (`COUNT(*)`) or `distinct:column` (`COUNT(DISTINCT column)`); `distinct` is not supported on the other aggregators.
 
-`@limit(n)` is only supported on relations that return multiple rows per parent (`HasMany`, `HasManyThrough`, `MorphMany`, `BelongsToMany`, `MorphToMany`, and their singular `HasOne`/`HasOneThrough`/`MorphOne` counterparts) — using it on a `BelongsTo`/`MorphTo` relation throws a validation error, since those return a single related row per parent and limiting would apply a single global limit across all parents' results instead. `@limit(n)` does not itself guarantee row order — pair it with a relation that defines its own ordering (e.g. `Author::latestPost()` uses `->hasOne(Post::class, 'author_id')->latest()`) if you need deterministic "first N" / "latest N" semantics. `@limit(...)` must come after `@filter(...)`/`@only(...)`, not before — in the other order (`relation:@limit(2):@filter(expr)`) nothing is rejected, but both modifiers are ignored and the relation is eager loaded whole.
+`@limit(n)` is only supported on relations that return multiple rows per parent (`HasMany`, `HasManyThrough`, `MorphMany`, `BelongsToMany`, `MorphToMany`, and their singular `HasOne`/`HasOneThrough`/`MorphOne` counterparts) — using it on a `BelongsTo`/`MorphTo` relation throws a validation error, since those return a single related row per parent and limiting would apply a single global limit across all parents' results instead. `@limit(n)` does not itself guarantee row order — pair it with a relation that defines its own ordering (e.g. `Author::latestPost()` uses `->hasOne(Post::class, 'author_id')->latest()`) if you need deterministic "first N" / "latest N" semantics. `@limit(n)` takes a positive integer no greater than the related query's `defaultMaxPageSize()` (250 by default), and may come before or after `@filter(...)`/`@only(...)`.
+
+Anything else in an `include=` item is a 422 rather than being ignored: an unknown modifier (`posts:@bogus`), `@alias` without an aggregate, `@filter` together with `@only`, a negated relation (`-posts`) or a value (`posts:id,title`).
 
 An `include=` item may go through at most `maxIncludeDepth()` relations (`posts.comments.author` is 3, the default from `config('curio.include.max_depth')`); a deeper chain fails validation.
 
