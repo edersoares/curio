@@ -57,7 +57,7 @@ class Paginator
         $size = max(1, min($size, $query->defaultMaxPageSize()));
 
         return new Curio($builder, $this->parser)
-            ->withQuery($query)
+            ->withQuery($query, $context)
             ->filter($filter)
             ->select($select)
             ->aggregate($aggregate)

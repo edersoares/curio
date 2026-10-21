@@ -12,6 +12,7 @@ use Dex\Laravel\Curio\Language\Parser;
 use Dex\Laravel\Curio\Query\PaginateQuery;
 use Illuminate\Database\Eloquent\Builder as Eloquent;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Traits\ForwardsCalls;
 
 /**
@@ -64,6 +65,14 @@ class Curio
     private ?PaginateQuery $query = null;
 
     /**
+     * The request input, set by `Paginator::execute()` and null on the
+     * fluent path - see `Events\ApplyPending::$context`.
+     *
+     * @var Collection<string, mixed>|null
+     */
+    private ?Collection $context = null;
+
+    /**
      * @param Eloquent<Model> $builder
      */
     public function __construct(
@@ -84,9 +93,16 @@ class Curio
      * `(new PostQuery())->allowSort(...)` from `getPaginateQuery()`) are
      * copied along with it.
      */
-    public function withQuery(PaginateQuery $query): static
+    /**
+     * @param Collection<string, mixed>|null $context the request input, so the
+     *                                                default filters of included
+     *                                                relations can resolve their
+     *                                                `$variables`
+     */
+    public function withQuery(PaginateQuery $query, ?Collection $context = null): static
     {
         $this->query = clone $query;
+        $this->context = $context;
 
         return $this;
     }
@@ -166,7 +182,7 @@ class Curio
             return;
         }
 
-        app(Pipeline::class)->pending(new ApplyPending($this->pending, $this->builder, $this->query ?? $this->wrapModelAsQuery()));
+        app(Pipeline::class)->pending(new ApplyPending($this->pending, $this->builder, $this->query ?? $this->wrapModelAsQuery(), $this->context));
 
         $this->pending = [];
     }
