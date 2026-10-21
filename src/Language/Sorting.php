@@ -58,12 +58,11 @@ class Sorting implements Applier
     }
 
     /**
-     * Builds the final `SortToken` shape from already-tokenized fields (via
-     * `Parser::transform()`, e.g. `-ranking name:@unaccent`). Splits a
-     * leading `-` (descending) from the key and carries any modifiers
-     * through untouched - `Sorting` doesn't know what any of them mean;
-     * that's up to a `SortTokenApplying` listener at apply time (see
-     * `applySort()`).
+     * Checks the shape of already-tokenized fields (via `Parser::transform()`,
+     * e.g. `-ranking name:@unaccent`): a field, an optional leading `-` for
+     * descending, and `@unaccent` as the only modifier. A value
+     * (`name:asc`) or any other modifier is a 422 rather than being ignored,
+     * which would sort in an order the client didn't ask for.
      *
      * @param array<int, FilterClause> $tokens
      *
@@ -71,6 +70,22 @@ class Sorting implements Applier
      */
     public function build(array $tokens): array
     {
+        foreach ($tokens as $token) {
+            if ($token['operator'] !== null) {
+                throw ValidationException::withMessages([
+                    'sort' => ["The sort expression '{$token['key']}' is not valid: use '-{$token['key']}' for descending, not a value."],
+                ]);
+            }
+
+            foreach ($token['modifiers'] as $modifier => $values) {
+                if ($modifier !== 'unaccent' || $values !== []) {
+                    throw ValidationException::withMessages([
+                        'sort' => ["The sort expression '{$token['key']}' is not valid: '@{$modifier}' is not allowed here."],
+                    ]);
+                }
+            }
+        }
+
         return $tokens;
     }
 
