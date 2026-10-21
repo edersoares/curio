@@ -24,7 +24,7 @@ test('no DSL input answers with a 500', function () {
 
     $values = [
         '', ' ', '*', '..', '-', '@', '@@', '$', '$x!', '"', '((', '))', ':@', ':@x(', 'a:@b(c',
-        'truncate', 'truncate.x', 'delete.x', 'has:truncate', 'has:truncate has:posts',
+        'truncate', 'truncate.x', 'delete.x', 'has:truncate', 'has:truncate has:posts', 'has:posts,posts', 'has:null', 'has:*posts*',
         'name:', 'name:a b', '-name:*a*', 'name:a..b', 'name:,,',
         'posts:@count:@alias(a b)', 'posts:@count:@alias(x")', 'posts:@count:@alias(truncate.x)',
         'posts:@limit(99999999999999999999)', 'posts:@filter(has:truncate)', 'posts:@only()',
