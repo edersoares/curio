@@ -253,6 +253,9 @@ class Including implements Applier
 
             $builder->with([
                 $relationName => function (Builder|Relation $q) use ($filter, $relationQuery, $limit, $relationName) {
+                    // Larastan types a `with()` constraint's argument as `Relation<*, *, *>`;
+                    // pin it to the shape the helpers below are declared against.
+                    /** @var Builder<Model>|Relation<Model, Model, mixed> $q */
                     if ($filter !== null) {
                         // $relationQuery is only null when the outer $query was itself null - unreachable in practice, see applyRelationFilter()'s docblock.
                         assert($relationQuery !== null);
