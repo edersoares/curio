@@ -98,11 +98,11 @@ describe('negative filter', function () {
         ->expect(fn () => Author::curio()->filter('-active:false'))
         ->toRunQuery('select * from "author" where "author"."active" != 0');
 
-    test('`-key:!=value` / negated different is equal')
+    test('`-key:!=value` / negated not-equal is equal')
         ->expect(fn () => Author::curio()->filter('-ranking:!=75'))
         ->toRunQuery('select * from "author" where "author"."ranking" = 75');
 
-    test('`-key:<>value` / negated different is equal')
+    test('`-key:<>value` / negated angle-bracket not-equal is equal')
         ->expect(fn () => Author::curio()->filter('-ranking:<>75'))
         ->toRunQuery('select * from "author" where "author"."ranking" = 75');
 
