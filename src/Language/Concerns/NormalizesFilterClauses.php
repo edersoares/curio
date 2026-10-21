@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Dex\Laravel\Curio\Language\Concerns;
 
 use Dex\Laravel\Curio\Language\Filtering;
+use Dex\Laravel\Curio\Support\Like;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -139,13 +140,20 @@ trait NormalizesFilterClauses
 
         $operator = 'like';
 
-        if (str_starts_with($parsedValue, '*')) {
-            $parsedValue = '%' . substr($parsedValue, 1);
+        if ($parsedValue === '*') {
+            $parsedValue = '%';
+
+            return;
         }
 
-        if (str_ends_with($parsedValue, '*')) {
-            $parsedValue = substr($parsedValue, 0, -1) . '%';
-        }
+        $leading = str_starts_with($parsedValue, '*');
+        $trailing = str_ends_with($parsedValue, '*');
+
+        $core = substr($parsedValue, $leading ? 1 : 0, $trailing ? -1 : null);
+
+        // Only the `*`s at either end are wildcards; a `%` or `_` the client
+        // typed is matched literally (see `Support\Like`).
+        $parsedValue = ($leading ? '%' : '') . Like::escape($core) . ($trailing ? '%' : '');
     }
 
     private function applyListOperator(string &$operator, mixed $parsedValue): void

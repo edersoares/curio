@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dex\Laravel\Curio\Language\Concerns;
 
+use Dex\Laravel\Curio\Support\Like;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -27,7 +28,7 @@ trait TypedBuilderApplier
     {
         assert(is_string($value));
 
-        $not ? $builder->whereNotLike($key, $value) : $builder->whereLike($key, $value);
+        Like::where($builder, $key, $value, $not);
     }
 
     /**

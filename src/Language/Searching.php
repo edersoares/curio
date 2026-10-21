@@ -7,6 +7,7 @@ namespace Dex\Laravel\Curio\Language;
 use Dex\Laravel\Curio\Contracts\Applier;
 use Dex\Laravel\Curio\Contracts\Searchable;
 use Dex\Laravel\Curio\Query\PaginateQuery;
+use Dex\Laravel\Curio\Support\Like;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -123,7 +124,8 @@ class Searching implements Applier
 
         assert(is_string($value));
 
-        $wrapped = "%{$value}%";
+        // The client's own `%`/`_` are matched literally (see `Support\Like`).
+        $wrapped = '%' . Like::escape($value) . '%';
 
         $builder->where(function (Builder|Relation $query) use ($builder, $fields, $mode, $threshold, $value, $wrapped) {
             foreach ($fields as $field) {
@@ -131,12 +133,12 @@ class Searching implements Applier
 
                 $template = match ($mode) {
                     'trgm' => 'similarity(unaccent(%s), unaccent(?)) > ?',
-                    'unaccent' => 'unaccent(lower(%s)) like unaccent(lower(?))',
+                    'unaccent' => 'unaccent(lower(%s)) like unaccent(lower(?))' . Like::clause($wrapped),
                     default => null,
                 };
 
                 if ($template === null) {
-                    $query->orWhereLike($column, $wrapped);
+                    Like::where($query, $column, $wrapped, boolean: 'or');
 
                     continue;
                 }
