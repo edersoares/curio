@@ -9,6 +9,7 @@ use Dex\Laravel\Curio\Query\PaginateQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Collection;
 
 /**
  * Carries every token queued across all 6 fluent DSL methods since the last
@@ -28,6 +29,11 @@ use Illuminate\Database\Eloquent\Relations\Relation;
  * token's `key` via `$query->replaceBy()` in place, so every step after it
  * already sees resolved keys.
  *
+ * `$context` is the request input on the HTTP path (`Extensions\Paginator`)
+ * and null on the fluent `Model::curio()` path. It is what decides whether a
+ * related query's `defaultFilter()` applies to an `include=` - see
+ * `Language\Including::applyParsed()`.
+ *
  * @phpstan-import-type FilterClause from Filtering
  */
 class ApplyPending
@@ -35,10 +41,12 @@ class ApplyPending
     /**
      * @param array<int, FilterClause> $tokens
      * @param Builder<Model>|Relation<Model, Model, mixed> $builder
+     * @param Collection<string, mixed>|null $context
      */
     public function __construct(
         public array $tokens,
         public readonly Builder|Relation $builder,
         public readonly PaginateQuery $query,
+        public readonly ?Collection $context = null,
     ) {}
 }

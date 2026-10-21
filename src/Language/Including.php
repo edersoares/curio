@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dex\Laravel\Curio\Language;
 
+use Closure;
 use Dex\Laravel\Curio\Contracts\Applier;
 use Dex\Laravel\Curio\Events\ApplyPending;
 use Dex\Laravel\Curio\Pipeline;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasOneOrMany;
 use Illuminate\Database\Eloquent\Relations\HasOneOrManyThrough;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -26,7 +28,10 @@ use RuntimeException;
  */
 class Including implements Applier
 {
-    public function __construct(private readonly Parser $parser) {}
+    public function __construct(
+        private readonly Parser $parser,
+        private readonly VariableResolver $variables,
+    ) {}
 
     /**
      * @param array<int, FilterClause> $tokens
@@ -243,60 +248,139 @@ class Including implements Applier
     }
 
     /**
+     * Each relation an item names is constrained the way that relation's own
+     * endpoint is: by its query's `defaultFilter()`, unless the item scopes
+     * it with `@filter(...)`/`@only(...)` - which replaces the default, the
+     * same way `filter=` replaces `defaultFilter()` at the top level. So rows
+     * an endpoint hides by default stay hidden when they are reached through
+     * an `include=` of another endpoint.
+     *
+     * In a dotted item (`posts.comments`) every level is a relation of its
+     * own: the levels in between get their query's default too, unless
+     * another item in the same request names them explicitly.
+     *
+     * `$context` is the request input that `$variables` in a default filter
+     * resolve against. It is null on the fluent `Model::curio()` path, where
+     * no `default*()` applies at any level, so none applies here either.
+     *
      * @param Builder<Model> $builder
      * @param array<int, IncludeItem> $parsedItems
+     * @param Collection<string, mixed>|null $context
      */
-    protected function applyParsed(Builder $builder, array $parsedItems, ?PaginateQuery $query = null): void
+    protected function applyParsed(Builder $builder, array $parsedItems, PaginateQuery $query, ?Collection $context = null): void
     {
+        $eagerLoads = [];
+
         foreach ($parsedItems as $parsed) {
             if ($parsed['mode'] === 'aggregation') {
-                $this->applyAggregation($builder, $parsed, $query);
+                $this->applyAggregation($builder, $parsed, $query, $context);
+
                 continue;
             }
 
-            if ($parsed['filter'] === null && $parsed['limit'] === null) {
-                $builder->with($parsed['relation']);
-                continue;
-            }
-
-            $relationQuery = $parsed['filter'] !== null && $query !== null
-                ? $this->resolveQuery($parsed['relation'], $query)
-                : null;
-
-            $filter = $parsed['filter'];
-            $limit = $parsed['limit'];
-            $relationName = $parsed['relation'];
+            $relation = $parsed['relation'];
+            $segments = explode('.', $relation);
 
             if ($parsed['mode'] === 'filter') {
-                // $parsed['mode'] === 'filter' is only ever produced alongside a non-null 'filter' (see parseEagerLoadInclude()); $relationQuery above is only guaranteed non-null when $query was given.
-                assert($filter !== null);
+                assert($parsed['filter'] !== null);
 
-                $builder->whereHas($relationName, function (Builder $q) use ($filter, $relationQuery) {
-                    // $relationQuery is only null when the outer $query was itself null - unreachable in practice, see applyRelationFilter()'s docblock.
-                    assert($relationQuery !== null);
-
-                    $this->applyRelationFilter($q, $filter, $relationQuery);
-                });
+                $this->whereHasChain($builder, $segments, $query, $parsed['filter'], $context);
             }
 
-            $builder->with([
-                $relationName => function (Builder|Relation $q) use ($filter, $relationQuery, $limit, $relationName) {
-                    // Larastan types a `with()` constraint's argument as `Relation<*, *, *>`;
-                    // pin it to the shape the helpers below are declared against.
-                    /** @var Builder<Model>|Relation<Model, Model, mixed> $q */
-                    if ($filter !== null) {
-                        // $relationQuery is only null when the outer $query was itself null - unreachable in practice, see applyRelationFilter()'s docblock.
-                        assert($relationQuery !== null);
+            $path = [];
 
-                        $this->applyRelationFilter($q, $filter, $relationQuery);
-                    }
+            foreach (array_slice($segments, 0, -1) as $segment) {
+                $path[] = $segment;
+                $name = implode('.', $path);
+                $levelQuery = $this->resolveQuery($name, $query);
 
-                    if ($limit !== null) {
-                        $this->applyLimit($q, $relationName, $limit);
-                    }
-                },
-            ]);
+                $eagerLoads[$name] ??= $this->eagerLoadConstraint($name, $levelQuery, $this->defaultFilterOf($levelQuery, $context), null);
+            }
+
+            $leafQuery = $this->resolveQuery($relation, $query);
+
+            $eagerLoads[$relation] = $this->eagerLoadConstraint(
+                $relation,
+                $leafQuery,
+                $parsed['filter'] ?? $this->defaultFilterOf($leafQuery, $context),
+                $parsed['limit'],
+            );
         }
+
+        if ($eagerLoads !== []) {
+            $builder->with($eagerLoads);
+        }
+    }
+
+    /**
+     * @return Closure(Builder<*>|Relation<*, *, *>): void
+     */
+    private function eagerLoadConstraint(string $relation, PaginateQuery $query, ?string $filter, ?int $limit): Closure
+    {
+        return function (Builder|Relation $q) use ($relation, $query, $filter, $limit): void {
+            // Larastan types a `with()` constraint's argument as `Relation<*, *, *>`;
+            // pin it to the shape the helpers below are declared against.
+            /** @var Builder<Model>|Relation<Model, Model, mixed> $q */
+            if ($filter !== null) {
+                $this->applyRelationFilter($q, $filter, $query);
+            }
+
+            if ($limit !== null) {
+                $this->applyLimit($q, $relation, $limit);
+            }
+        };
+    }
+
+    /**
+     * `@filter(expr)` constrains the parent to rows with a matching related
+     * row - one `whereHas()` per level, so the levels in between keep their
+     * own query's default filter while the last one gets `expr` instead.
+     *
+     * @param Builder<Model> $builder
+     * @param list<string> $segments
+     * @param Collection<string, mixed>|null $context
+     */
+    private function whereHasChain(Builder $builder, array $segments, PaginateQuery $parentQuery, string $filter, ?Collection $context): void
+    {
+        $segment = array_shift($segments);
+
+        assert($segment !== null);
+
+        $query = $this->resolveQuery($segment, $parentQuery);
+
+        $builder->whereHas($segment, function (Builder $q) use ($segments, $query, $filter, $context): void {
+            if ($segments === []) {
+                $this->applyRelationFilter($q, $filter, $query);
+
+                return;
+            }
+
+            $default = $this->defaultFilterOf($query, $context);
+
+            if ($default !== null) {
+                $this->applyRelationFilter($q, $default, $query);
+            }
+
+            $this->whereHasChain($q, $segments, $query, $filter, $context);
+        });
+    }
+
+    /**
+     * The query's `defaultFilter()` with its `$variables` resolved against
+     * the request, or null when there is no request context (the fluent
+     * path) or no default.
+     *
+     * @param Collection<string, mixed>|null $context
+     */
+    private function defaultFilterOf(PaginateQuery $query, ?Collection $context): ?string
+    {
+        if ($context === null) {
+            return null;
+        }
+
+        $filter = $this->variables->resolve($query->defaultFilter(), $context);
+
+        return trim($filter) === '' ? null : $filter;
     }
 
     /**
@@ -309,11 +393,6 @@ class Including implements Applier
      * relation-scoped `:@filter(some words)` now searches the relation's own
      * `searchBy()` too, same as free text does in the top-level `filter=`
      * pipeline.
-     *
-     * `$relationQuery === null` only when the *outer* `$query` passed to
-     * `apply()` was itself null - unreachable in practice (`apply()`'s own
-     * `PaginateQuery $query` parameter is non-nullable), kept only as a
-     * defensive fallback matching this method's previous behavior.
      *
      * @param Builder<Model>|Relation<Model, Model, mixed> $builder
      */
@@ -345,27 +424,28 @@ class Including implements Applier
     /**
      * @param Builder<Model> $builder
      * @param IncludeAggregationItem $parsed
+     * @param Collection<string, mixed>|null $context
      */
-    private function applyAggregation(Builder $builder, array $parsed, ?PaginateQuery $query = null): void
+    private function applyAggregation(Builder $builder, array $parsed, PaginateQuery $query, ?Collection $context): void
     {
         $relation = $parsed['relation'];
         $type = $parsed['aggregation'];
         $column = $parsed['column'] ?? '*';
         $distinct = $parsed['distinct'];
         $alias = $parsed['alias'];
-        $filter = $parsed['filter'];
+        $relationQuery = $this->resolveQuery($relation, $query);
+
+        // `@only(expr)` replaces the related query's default filter, as in
+        // `applyParsed()`: a count of comments counts the comments that
+        // endpoint would show.
+        $filter = $parsed['filter'] ?? $this->defaultFilterOf($relationQuery, $context);
 
         $relationExpr = "{$relation} as {$alias}";
 
         $constraint = null;
 
-        if ($filter) {
-            $relationQuery = $query !== null ? $this->resolveQuery($relation, $query) : null;
-
-            $constraint = function (Builder $q) use ($filter, $relationQuery) {
-                // $relationQuery is only null when the outer $query was itself null - unreachable in practice, see applyRelationFilter()'s docblock.
-                assert($relationQuery !== null);
-
+        if ($filter !== null) {
+            $constraint = function (Builder $q) use ($filter, $relationQuery): void {
                 $this->applyRelationFilter($q, $filter, $relationQuery);
             };
         }
@@ -463,8 +543,9 @@ class Including implements Applier
     /**
      * @param array<int, FilterClause> $tokens already-parsed via `Parser::transform()`
      * @param Builder<Model>|Relation<Model, Model, mixed> $builder
+     * @param Collection<string, mixed>|null $context the request input, on the HTTP path - see `applyParsed()`
      */
-    public function apply(Builder|Relation $builder, array $tokens, PaginateQuery $query): void
+    public function apply(Builder|Relation $builder, array $tokens, PaginateQuery $query, ?Collection $context = null): void
     {
         assert($builder instanceof Builder);
 
@@ -474,7 +555,7 @@ class Including implements Applier
             throw ValidationException::withMessages($errors);
         }
 
-        $this->applyParsed($builder, $parsedItems, $query);
+        $this->applyParsed($builder, $parsedItems, $query, $context);
     }
 
     /**

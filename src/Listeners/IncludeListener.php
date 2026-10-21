@@ -19,6 +19,6 @@ class IncludeListener
             return;
         }
 
-        $this->including->apply($event->builder, $tokens, $event->query);
+        $this->including->apply($event->builder, $tokens, $event->query, $event->context);
     }
 }

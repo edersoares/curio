@@ -215,6 +215,8 @@ Space-separated field list, prefix `-` for descending: `sort=-published_at title
 
 Space-separated relation list. Only relations declared in `includeBy()` (mapped to their own `PaginateQuery` class) are allowed.
 
+An included relation is constrained the way its own endpoint is: by that `PaginateQuery`'s `defaultFilter()`, with `$variables` resolved against the request. `@filter(...)` and `@only(...)` replace the default, as `filter=` does at the top level, and aggregates (`@count`, `@sum(...)`, …) count what the related endpoint would show. In a dotted item (`posts.comments`) every level gets its own default. This applies on the HTTP path only — the fluent `Model::curio()` applies no `default*()` at any level.
+
 | Pattern                            | Effect                                                        |
 |------------------------------------|----------------------------------------------------------------|
 | `relation`                         | Eager loads the relation                                       |
