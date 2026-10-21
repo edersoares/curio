@@ -15,6 +15,12 @@ on:
       - 'phpunit.xml.dist'
       - 'composer.json'
       - 'composer.lock'
+  # There is no lockfile, so every run resolves the newest dependencies. A
+  # weekly run on `main` catches a release that breaks Curio before the next
+  # unrelated PR trips over it.
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,7 +31,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         os: [ubuntu-latest]
         php: [8.5, 8.4]
@@ -36,6 +42,13 @@ jobs:
             testbench: 11.*
           - laravel: 12.*
             testbench: 10.*
+          # The lowest versions `composer.json` claims to support, on the
+          # lowest PHP: proves the `^12.0` constraint, not just the latest 12.x.
+          - os: ubuntu-latest
+            php: 8.4
+            laravel: 12.*
+            testbench: 10.*
+            stability: prefer-lowest
 
     name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }} / ${{ matrix.stability }} / ${{ matrix.os }}
 
