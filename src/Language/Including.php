@@ -313,7 +313,7 @@ class Including implements Applier
     }
 
     /**
-     * @return Closure(Builder<Model>|Relation<Model, Model, mixed>): void
+     * @return Closure(Builder<*>|Relation<*, *, *>): void
      */
     private function eagerLoadConstraint(string $relation, PaginateQuery $query, ?string $filter, ?int $limit): Closure
     {
@@ -424,6 +424,7 @@ class Including implements Applier
     /**
      * @param Builder<Model> $builder
      * @param IncludeAggregationItem $parsed
+     * @param Collection<string, mixed>|null $context
      */
     private function applyAggregation(Builder $builder, array $parsed, PaginateQuery $query, ?Collection $context): void
     {
