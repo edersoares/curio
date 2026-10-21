@@ -8,6 +8,7 @@ use Dex\Laravel\Curio\Contracts\Applier;
 use Dex\Laravel\Curio\Language\Concerns\BuildsAggregateExpressions;
 use Dex\Laravel\Curio\Language\Concerns\JoinsAggregateRelations;
 use Dex\Laravel\Curio\Query\PaginateQuery;
+use Dex\Laravel\Curio\Support\Like;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -757,6 +758,17 @@ class Aggregating implements Applier
     private function applyHavingLike(Builder $builder, Expression $expression, mixed $value, bool $not): void
     {
         assert(is_string($value));
+
+        if (Like::isEscaped($value)) {
+            $sql = $builder->getQuery()->getGrammar()->getValue($expression)
+                . ($not ? ' not like ?' : ' like ?')
+                . Like::clause($value);
+
+            // @phpstan-ignore-next-line argument.type (havingRaw() requires a literal-string - Laravel generic bound, not satisfiable by SQL built from a runtime column name)
+            $builder->havingRaw($sql, [$value]);
+
+            return;
+        }
 
         $builder->having($expression, $not ? 'not like' : 'like', $value);
     }
