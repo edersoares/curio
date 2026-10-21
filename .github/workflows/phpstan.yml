@@ -4,8 +4,20 @@ on:
   push:
     paths:
       - '**.php'
+      - 'composer.json'
       - 'phpstan.neon.dist'
       - '.github/workflows/phpstan.yml'
+  pull_request:
+    paths:
+      - '**.php'
+      - 'composer.json'
+      - 'phpstan.neon.dist'
+      - '.github/workflows/phpstan.yml'
+  # A new Larastan/PHPStan release can fail this job on code nobody touched
+  # (it did, on `Including.php`); the weekly run surfaces that on `main`.
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
 
 jobs:
   phpstan:
