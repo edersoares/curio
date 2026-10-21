@@ -44,10 +44,18 @@ class VariableResolver
                 $name = $match[1];
                 $required = $match[2] ?? '';
 
-                if ($context->has($name)) {
-                    $contextValue = $context->get($name);
+                // A JSON body or a `prepareForValidation()` merge hands over
+                // real ints/floats/bools, not just the strings a query string
+                // carries - those used to resolve to '' (so `$author_id!`
+                // passed with no value at all). Anything that isn't a scalar
+                // (an array, `null`) counts as absent.
+                $contextValue = $context->get($name);
 
-                    return is_string($contextValue) ? $contextValue : '';
+                if (is_scalar($contextValue)) {
+                    return match (true) {
+                        is_bool($contextValue) => $contextValue ? 'true' : 'false',
+                        default => (string) $contextValue,
+                    };
                 }
 
                 if ($required === '!') {
