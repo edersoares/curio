@@ -99,6 +99,8 @@ trait NormalizesFilterClauses
             return;
         }
 
+        $this->assertSingleRelationName($value);
+
         $unsupported = array_diff(array_keys($modifiers), ['count']);
 
         if ($unsupported !== [] || ($modifiers === [] && $value !== null && str_contains($value, ':'))) {
@@ -287,5 +289,33 @@ trait NormalizesFilterClauses
         }
 
         return $value;
+    }
+
+    /**
+     * `has:` takes exactly one relation name. A list, a range, a wildcard or
+     * `null` used to slip through: `has:posts,comments` passed validation
+     * item by item, then the list grammar turned the clause into
+     * `WHERE "table"."has" IN (...)` - a column that doesn't exist, so a 500
+     * - and `has:null` reached `whereHas(null)`.
+     */
+    private function assertSingleRelationName(?string $value): void
+    {
+        $name = $value === null ? null : $this->stripQuotes($value);
+
+        $valid = $name !== null
+            && $name !== ''
+            && $name !== 'null'
+            && !str_contains($name, ',')
+            && !str_contains($name, '..')
+            && !str_starts_with($name, '*')
+            && !str_ends_with($name, '*');
+
+        if (!$valid) {
+            $shown = $value ?? 'filled';
+
+            throw ValidationException::withMessages([
+                'has' => ["The '$shown' relation filter is not valid - 'has:' takes a single relation name."],
+            ]);
+        }
     }
 }
