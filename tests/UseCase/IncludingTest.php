@@ -85,6 +85,10 @@ describe('modifiers', function () {
         ->toRunQuery('select * from "author" where exists (select * from "post" where "author"."id" = "post"."author_id" and "post"."status" = \'draft\' and "post"."published_at" is null)')
         ->toRunQuery('select * from "post" where "post"."author_id" in (?) and "post"."status" = \'draft\' and "post"."published_at" is null');
 
+    test('`relation:@filter(...)` keeps a nested `@count(...)` argument whole')
+        ->expect(fn () => Author::curio()->include('posts:@filter(has:comments:@count(>=2))'))
+        ->toRunQuery('select * from "author" where exists (select * from "post" where "author"."id" = "post"."author_id" and (select count(*) from "comment" where "post"."id" = "comment"."post_id") >= 2)');
+
     test('`relation:@limit(3)` / limit relation')
         ->defer(fn () => Post::factory()->create())
         ->expect(fn () => Author::curio()->include('posts:@limit(3)'))

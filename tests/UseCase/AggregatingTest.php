@@ -102,6 +102,18 @@ describe('having', function () {
         ->expect(fn () => Author::curio()->aggregate('ranking:@sum:@having(-null)')->toRawSql())
         ->toBe('select SUM("author"."ranking") as "ranking_sum" from "author" having SUM("author"."ranking") is not null');
 
+    test('`:@having(->=value)` flips the comparison')
+        ->expect(fn () => Author::curio()->aggregate('ranking:@sum:@having(->=100)')->toRawSql())
+        ->toBe('select SUM("author"."ranking") as "ranking_sum" from "author" having SUM("author"."ranking") < 100');
+
+    test('`:@having(-<value)` flips the comparison')
+        ->expect(fn () => Author::curio()->aggregate('ranking:@sum:@having(-<100)')->toRawSql())
+        ->toBe('select SUM("author"."ranking") as "ranking_sum" from "author" having SUM("author"."ranking") >= 100');
+
+    test('`:@having(<>value)` produces a different comparison')
+        ->expect(fn () => Author::curio()->aggregate('ranking:@sum:@having(<>100)')->toRawSql())
+        ->toBe('select SUM("author"."ranking") as "ranking_sum" from "author" having SUM("author"."ranking") <> 100');
+
     test('`:@having(a..b)` produces BETWEEN')
         ->expect(fn () => Author::curio()->aggregate('ranking:@sum:@having(100..200)')->toRawSql())
         ->toBe('select SUM("author"."ranking") as "ranking_sum" from "author" having SUM("author"."ranking") between 100 and 200');

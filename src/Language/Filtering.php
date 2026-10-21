@@ -371,12 +371,27 @@ class Filtering implements Applier
             $expr = substr($expr, 1);
         }
 
-        if (!preg_match('/^(?P<operator>>=|<=|!=|=|>|<)?(?P<value>.+)$/', $expr, $matches)) {
+        if (!preg_match('/^(?P<operator>>=|<=|!=|<>|=|>|<)?(?P<value>.+)$/', $expr, $matches)) {
             throw ValidationException::withMessages([
                 'aggregate' => "The having expression '$expr' is not valid.",
             ]);
         }
 
-        return $this->normalizeClause('', $matches['operator'] ?: '=', $matches['value'], $negated);
+        $clause = $this->normalizeClause('', $matches['operator'] ?: '=', $matches['value'], $negated);
+
+        // A `filter=` clause has its ordering comparisons flipped by
+        // `Listeners\NegatedOperator`; a having expression never reaches that
+        // listener, so `@having(->=100)` used to apply as `>= 100`.
+        if ($negated) {
+            $clause['operator'] = match ($clause['operator']) {
+                '>' => '<=',
+                '>=' => '<',
+                '<=' => '>',
+                '<' => '>=',
+                default => $clause['operator'],
+            };
+        }
+
+        return $clause;
     }
 }
