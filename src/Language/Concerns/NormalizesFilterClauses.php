@@ -54,6 +54,8 @@ trait NormalizesFilterClauses
 
         $parsedValue = $this->parseValue($resolvedValue);
 
+        $this->rejectComparisonWithShapedValue($key, $operator, $parsedValue);
+
         $this->applyRelationOperator($key, $negated, $operator);
         $this->applyWildcardOperator($operator, $parsedValue);
         $this->applyListOperator($operator, $parsedValue);
@@ -124,6 +126,29 @@ trait NormalizesFilterClauses
         $params['relation.count'] = (int) $matches['count'];
     }
 
+    /**
+     * A list (`a,b`), a range (`a..b`) and a wildcard (`*a*`) each choose an
+     * operator of their own (`in`, `between`, `like`), so an explicit
+     * comparison in front of one (`>=*abc`, `>1,2`, `>=1..5`) had nothing to
+     * apply to and was dropped without a word - `ranking:>=80..100` quietly
+     * became a `BETWEEN`. It is ambiguous input, so it is rejected.
+     */
+    private function rejectComparisonWithShapedValue(string $key, string $operator, mixed $parsedValue): void
+    {
+        if ($operator === '=') {
+            return;
+        }
+
+        $shaped = is_array($parsedValue)
+            || (is_string($parsedValue) && (str_starts_with($parsedValue, '*') || str_ends_with($parsedValue, '*') || str_contains($parsedValue, '..')));
+
+        if ($shaped) {
+            throw ValidationException::withMessages([
+                ($key !== '' ? $key : 'aggregate') => ["The '$operator' operator can't be combined with a list, a range or a wildcard."],
+            ]);
+        }
+    }
+
     private function applyRelationOperator(string $key, bool $negated, string &$operator): void
     {
         if ($key === 'has') {
@@ -181,21 +206,19 @@ trait NormalizesFilterClauses
             return;
         }
 
-        if ($operator === 'in') {
-            $operator = 'not in';
-        }
-
-        if ($operator === '=') {
-            $operator = '!=';
-        }
-
-        if ($operator === 'like') {
-            $operator = 'not like';
-        }
-
-        if ($operator === 'between') {
-            $operator = 'not between';
-        }
+        // `!=`/`<>` negated is plain equality: it used to stay `!=`, so
+        // `-ranking:!=5` meant the same as `ranking:!=5`. The ordering
+        // comparisons (`>`, `<`, ...) are flipped later, by
+        // `Listeners\NegatedOperator` (and by `Filtering::parseHavingExpression()`
+        // for `@having(...)`, which never goes through that listener).
+        $operator = match ($operator) {
+            'in' => 'not in',
+            '=' => '!=',
+            '!=', '<>' => '=',
+            'like' => 'not like',
+            'between' => 'not between',
+            default => $operator,
+        };
     }
 
     /**

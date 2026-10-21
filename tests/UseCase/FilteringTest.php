@@ -36,6 +36,10 @@ describe('filter', function () {
         ->expect(fn () => Author::curio()->filter('ranking:<10'))
         ->toRunQuery('select * from "author" where "author"."ranking" < 10');
 
+    test('`key:<>value` / different')
+        ->expect(fn () => Author::curio()->filter('ranking:<>75'))
+        ->toRunQuery('select * from "author" where "author"."ranking" <> 75');
+
     test('`key:a,b` / in')
         ->expect(fn () => Author::curio()->filter('ranking:80,90,100'))
         ->toRunQuery('select * from "author" where "author"."ranking" in (80, 90, 100)');
@@ -93,6 +97,14 @@ describe('negative filter', function () {
     test('`-key:false` / is not false')
         ->expect(fn () => Author::curio()->filter('-active:false'))
         ->toRunQuery('select * from "author" where "author"."active" != 0');
+
+    test('`-key:!=value` / negated different is equal')
+        ->expect(fn () => Author::curio()->filter('-ranking:!=75'))
+        ->toRunQuery('select * from "author" where "author"."ranking" = 75');
+
+    test('`-key:<>value` / negated different is equal')
+        ->expect(fn () => Author::curio()->filter('-ranking:<>75'))
+        ->toRunQuery('select * from "author" where "author"."ranking" = 75');
 
     test('`-key:>value` / is not greater than')
         ->expect(fn () => Author::curio()->filter('-ranking:>75'))
@@ -255,6 +267,22 @@ describe('validation errors', function () {
     test('throws a error with not allowed operator')
         ->expect(fn () => Post::curio()->filter('has:posts:@count(!=0)')->toRawSql())
         ->throws(ValidationException::class, "The operator/count '!=0' is not allowed on the 'posts' relation.");
+
+    test('a comparison operator in front of a wildcard is rejected')
+        ->expect(fn () => Author::curio()->filter('name:>=*eder*')->toRawSql())
+        ->throws(ValidationException::class, "The '>=' operator can't be combined with a list, a range or a wildcard.");
+
+    test('a comparison operator in front of a range is rejected')
+        ->expect(fn () => Author::curio()->filter('ranking:>=80..100')->toRawSql())
+        ->throws(ValidationException::class, "The '>=' operator can't be combined with a list, a range or a wildcard.");
+
+    test('a comparison operator in front of a list is rejected')
+        ->expect(fn () => Author::curio()->filter('ranking:>1,2')->toRawSql())
+        ->throws(ValidationException::class, "The '>' operator can't be combined with a list, a range or a wildcard.");
+
+    test('an unbalanced parenthesis is rejected instead of being dropped')
+        ->expect(fn () => Author::curio()->filter('name:eder )')->toRawSql())
+        ->throws(ValidationException::class, "The filter expression 'name:eder )' has unbalanced parentheses.");
 
     test('a relation-dotted field naming an unknown relation is rejected')
         ->expect(fn () => Author::curio()->filter('bogus.field:value')->toRawSql())

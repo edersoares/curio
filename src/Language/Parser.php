@@ -37,7 +37,7 @@ class Parser
         $result = [];
         $freeText = [];
 
-        foreach (Tokenizer::split($string) as $token) {
+        foreach (Tokenizer::split($string, $type) as $token) {
             $prefix = Tokenizer::matchKeyPrefix($token);
             $remainder = $prefix === null ? null : Tokenizer::matchRemainder($prefix['remainder']);
 

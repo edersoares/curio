@@ -618,3 +618,34 @@ describe('malformed token error key', function () {
             'sort' => ['sort' => ['The sort expression \'"lorem ipsum"\' is not valid.']],
         ]);
 });
+
+describe('parentheses', function () {
+    test('a nested `(...)` stays inside its modifier argument')
+        ->expect(fn () => $this->parser->transform('posts:@filter(has:comments:@count(>=3)):@limit(2)', 'include'))
+        ->toFirstBe([
+            'type' => 'include',
+            'key' => 'posts',
+            'operator' => null,
+            'value' => null,
+            'negated' => false,
+            'modifiers' => [
+                'filter' => ['has:comments:@count(>=3)'],
+                'limit' => ['2'],
+            ],
+        ]);
+
+    test('a parenthesis inside a quoted phrase is not counted')
+        ->expect(fn () => $this->parser->transform('title:"a (b"', 'filter'))
+        ->toFirstBe([
+            'key' => 'title',
+            'operator' => '=',
+            'value' => 'a (b',
+            'type' => 'filter',
+            'negated' => false,
+            'modifiers' => [],
+        ]);
+
+    test('an unbalanced parenthesis is a validation error')
+        ->expect(fn () => $this->parser->transform('posts:@filter(status:draft', 'include'))
+        ->throws(ValidationException::class, "The include expression 'posts:@filter(status:draft' has unbalanced parentheses.");
+});
